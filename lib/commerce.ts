@@ -1,58 +1,167 @@
-import { Commerce } from "commerce-kit";
+import Medusa from "@medusajs/js-sdk";
 import { cacheLife } from "next/cache";
-import { try_ } from "safe-try";
 import { invariant } from "@/lib/invariant";
 
-// Override the API host (defaults to yns.store / yns.cx by key prefix). Useful for
-// pointing at a dev deployment, e.g. YNS_API_URL=https://dev.axelgrubba.com
-const endpoint = process.env.YNS_API_URL || undefined;
-
-// Fail loudly at boot — without the key every SDK call surfaces as an opaque API error.
 invariant(
-	process.env.YNS_API_KEY,
-	"Missing YNS_API_KEY environment variable. Add it to .env.local (see .env.example).",
+	process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY,
+	"Missing NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY environment variable. Add it to .env.local (see .env.example).",
 );
 
-export const commerce = Commerce({
-	token: process.env.YNS_API_KEY,
-	endpoint,
+// Store API client (publishable key), used for all storefront browsing/cart/order calls.
+// Token storage is "nostore": auth is a per-request bearer token read from our own
+// httpOnly cookie (see lib/auth-cookies.ts) and passed explicitly via headers, since
+// Server Components/Actions have no browser storage to persist a token in.
+export const medusa = new Medusa({
+	baseUrl: process.env.MEDUSA_BACKEND_URL ?? "http://localhost:9000",
+	publishableKey: process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY,
+	auth: { type: "jwt", jwtTokenStorageMethod: "nostore" },
 });
 
-// Plain "use cache" (not "remote") so store settings can be part of the static
-// shell — remote-cached entries defer to request time and block prerendering
-// for everything that depends on them (metadata, <html lang>, nav links).
-export const meGetCached = async (token?: string) => {
-	"use cache";
-
-	const commerce = Commerce({ token, endpoint });
-	return commerce.meGet();
-};
-
-// Store name + description for page-level metadata. Same cache posture as the
-// root layout's getStoreMetadata so it stays in the static shell.
-export async function getStoreSeo() {
-	"use cache";
-	cacheLife("hours");
-
-	const [error, me] = await try_(meGetCached());
-	if (error) {
-		return { storeName: "Your Next Store", storeDescription: null };
-	}
-	return {
-		storeName: me.store.name || "Your Next Store",
-		storeDescription: me.store.settings?.storeDescription || null,
-	};
+export function authHeaders(token: string | null): Record<string, string> {
+	return token ? { authorization: `Bearer ${token}` } : {};
 }
 
-export function getStoreFaviconUrl(
-	settings: Awaited<ReturnType<typeof commerce.meGet>>["store"]["settings"],
-) {
-	const faviconUrl =
-		settings?.favicon?.imageUrl ??
-		(typeof settings?.logo === "string" ? settings.logo : settings?.logo?.imageUrl) ??
-		null;
+let regionIdPromise: Promise<string> | null = null;
 
-	return faviconUrl;
+/** The store's single configured region (Uganda/UGX). Resolved once and memoized per isolate. */
+export function getDefaultRegionId(): Promise<string> {
+	regionIdPromise ??= medusa.store.region
+		.list({ limit: 1 })
+		.then(({ regions }) => {
+			invariant(regions[0], "No region configured in Medusa. Run the seed script first.");
+			return regions[0].id;
+		})
+		.catch((error: unknown) => {
+			regionIdPromise = null;
+			throw error;
+		});
+	return regionIdPromise;
+}
+
+export async function productBrowse(params: {
+	category_id?: string[];
+	collection_id?: string[];
+	q?: string;
+	limit?: number;
+	offset?: number;
+	order?: string;
+}) {
+	const region_id = await getDefaultRegionId();
+	const { products, count, offset, limit } = await medusa.store.product.list({
+		...params,
+		region_id,
+		fields: "*variants.calculated_price,*variants.inventory_quantity,*images,*categories,*collection",
+	});
+	return { data: products, count, offset, limit };
+}
+
+export async function productGet({ idOrSlug }: { idOrSlug: string }) {
+	const region_id = await getDefaultRegionId();
+	const isId = idOrSlug.startsWith("prod_");
+	const { products } = await medusa.store.product.list({
+		...(isId ? { id: [idOrSlug] } : { handle: idOrSlug }),
+		region_id,
+		limit: 1,
+		fields:
+			"*variants.calculated_price,*variants.inventory_quantity,*images,*categories,*collection,*options,*options.values",
+	});
+	return products[0] ?? null;
+}
+
+export async function categoryGet({ idOrSlug }: { idOrSlug: string }) {
+	const isId = idOrSlug.startsWith("pcat_");
+	const { product_categories } = await medusa.store.category.list({
+		...(isId ? { id: [idOrSlug] } : { handle: idOrSlug }),
+		limit: 1,
+	});
+	return product_categories[0] ?? null;
+}
+
+export async function categoriesBrowse(params?: { limit?: number; offset?: number }) {
+	const { product_categories, count, offset, limit } = await medusa.store.category.list(params);
+	return { data: product_categories, count, offset, limit };
+}
+
+export async function collectionGet({ idOrSlug }: { idOrSlug: string }) {
+	const isId = idOrSlug.startsWith("pcol_");
+	const { collections } = await medusa.store.collection.list({
+		...(isId ? { id: [idOrSlug] } : { handle: idOrSlug }),
+		limit: 1,
+	});
+	return collections[0] ?? null;
+}
+
+export async function collectionBrowse(params?: { limit?: number; offset?: number }) {
+	const { collections, count, offset, limit } = await medusa.store.collection.list(params);
+	return { data: collections, count, offset, limit };
+}
+
+// No single facets endpoint in Medusa; derive available filters from categories/collections.
+// Price-bounds and variant-option faceting are dropped for now.
+export async function productFilters() {
+	const [{ data: categories }, { data: collections }] = await Promise.all([
+		categoriesBrowse({ limit: 100 }),
+		collectionBrowse({ limit: 100 }),
+	]);
+	return { categories, collections };
+}
+
+export async function cartGet({ cartId }: { cartId: string }) {
+	// Line items already carry their own unit_price (locked in at add-to-cart time) —
+	// expanding items.variant.calculated_price additionally would require passing
+	// region/currency context for that nested pricing calculation and isn't needed here.
+	const { cart } = await medusa.store.cart.retrieve(cartId, {
+		fields: "*items,*items.variant,*shipping_address,*region",
+	});
+	return cart;
+}
+
+export async function cartUpsert(params: {
+	cartId?: string;
+	variantId: string;
+	quantity: number;
+	mode?: "add" | "set";
+}) {
+	const { cartId, variantId, quantity, mode = "add" } = params;
+
+	if (!cartId) {
+		const region_id = await getDefaultRegionId();
+		const { cart } = await medusa.store.cart.create({
+			region_id,
+			items: [{ variant_id: variantId, quantity }],
+		});
+		return cart;
+	}
+
+	const existing = await cartGet({ cartId });
+	const existingItem = existing.items?.find((item) => item.variant_id === variantId);
+
+	if (!existingItem) {
+		if (quantity <= 0) {
+			return existing;
+		}
+		const { cart } = await medusa.store.cart.createLineItem(cartId, { variant_id: variantId, quantity });
+		return cart;
+	}
+
+	const nextQuantity = mode === "set" ? quantity : existingItem.quantity + quantity;
+
+	if (nextQuantity <= 0) {
+		const { parent } = await medusa.store.cart.deleteLineItem(cartId, existingItem.id);
+		return parent;
+	}
+
+	const { cart } = await medusa.store.cart.updateLineItem(cartId, existingItem.id, {
+		quantity: nextQuantity,
+	});
+	return cart;
+}
+
+export async function orderGet({ id }: { id: string }) {
+	const { order } = await medusa.store.order.retrieve(id, {
+		fields: "*items,*items.variant,*shipping_address,*shipping_methods,*payment_collections",
+	});
+	return order;
 }
 
 export function getCanonicalUrl(): string {
@@ -68,38 +177,14 @@ export function getCanonicalUrl(): string {
 	return "http://localhost:3000";
 }
 
-// Memoized per isolate: the proxy calls this on every proxied request, and the
-// fallback branch is a network round trip that "use cache" does not shield in
-// the middleware runtime. The result is deployment-constant, so caching the
-// promise is safe; a rejection clears it so a transient failure can retry.
-let subdomainPublicUrlPromise: ReturnType<typeof resolveSubdomainPublicUrl> | null = null;
-export const getSubdomainPublicUrl = () => {
-	subdomainPublicUrlPromise ??= resolveSubdomainPublicUrl().catch((error) => {
-		subdomainPublicUrlPromise = null;
-		throw error;
-	});
-	return subdomainPublicUrlPromise;
-};
+// Store name/description for page-level metadata. Static env-driven config now that
+// there's no hosted "store settings" record — cached so it stays in the prerendered shell.
+export async function getStoreSeo() {
+	"use cache";
+	cacheLife("hours");
 
-const resolveSubdomainPublicUrl = async () => {
-	const tenant = process.env.NEXT_PUBLIC_YNS_API_TENANT;
-	if (tenant) {
-		const tenantUrl = new URL(tenant);
-		const [subdomain, ...base] = tenantUrl.host.split(".");
-		const apiHost = base.join(".");
-		if (subdomain && apiHost) {
-			return {
-				subdomain,
-				// Preserve the tenant's scheme/port so local http backends work (not just https).
-				publicUrl: `${tenantUrl.protocol}//${apiHost}`,
-			};
-		}
-	}
-
-	// fallback to fetching from the API if env variable is not set or invalid
-	const {
-		store: { subdomain },
-		publicUrl,
-	} = await meGetCached(process.env.YNS_API_KEY);
-	return { subdomain, publicUrl };
-};
+	return {
+		storeName: process.env.NEXT_PUBLIC_STORE_NAME || "Your Next Store",
+		storeDescription: process.env.NEXT_PUBLIC_STORE_DESCRIPTION || null,
+	};
+}

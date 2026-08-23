@@ -1,48 +1,14 @@
 import { cacheLife } from "next/cache";
 import Link from "next/link";
-import { commerce, meGetCached } from "@/lib/commerce";
+import { collectionBrowse } from "@/lib/commerce";
 
-async function FooterBlogLink() {
-	"use cache";
-	cacheLife("hours");
-
-	const me = await meGetCached().catch(() => null);
-	if (!me?.store.settings?.enabledTools?.blog) {
-		return null;
-	}
-
-	return (
-		<li>
-			<Link href="/blog" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-				Blog
-			</Link>
-		</li>
-	);
-}
-
-async function FooterContactLink() {
-	"use cache";
-	cacheLife("hours");
-
-	const me = await meGetCached().catch(() => null);
-	if (!me?.store.settings?.enabledTools?.contactForm) {
-		return null;
-	}
-
-	return (
-		<li>
-			<Link href="/contact" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-				Contact Us
-			</Link>
-		</li>
-	);
-}
+// Blog, contact form, and legal pages are Phase 2 (Payload CMS) — links dropped for now.
 
 async function FooterCollections() {
 	"use cache";
 	cacheLife("hours");
 
-	const collections = await commerce.collectionBrowse({ limit: 5 });
+	const collections = await collectionBrowse({ limit: 5 });
 
 	if (collections.data.length === 0) {
 		return null;
@@ -55,39 +21,10 @@ async function FooterCollections() {
 				{collections.data.map((collection) => (
 					<li key={collection.id}>
 						<Link
-							href={`/collection/${collection.slug}`}
+							href={`/collection/${collection.handle}`}
 							className="text-sm text-muted-foreground hover:text-foreground transition-colors"
 						>
-							{collection.name}
-						</Link>
-					</li>
-				))}
-			</ul>
-		</div>
-	);
-}
-
-async function FooterLegalPages() {
-	"use cache";
-	cacheLife("hours");
-
-	const pages = await commerce.legalPageBrowse();
-
-	if (pages.data.length === 0) {
-		return null;
-	}
-
-	return (
-		<div>
-			<h3 className="text-sm font-semibold text-foreground">Legal</h3>
-			<ul className="mt-4 space-y-3">
-				{pages.data.map((page) => (
-					<li key={page.id}>
-						<Link
-							href={`/legal${page.href}`}
-							className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-						>
-							{page.label}
+							{collection.title}
 						</Link>
 					</li>
 				))}
@@ -137,7 +74,6 @@ export async function Footer() {
 									About Us
 								</Link>
 							</li>
-							<FooterContactLink />
 							<li>
 								<Link
 									href="/faq"
@@ -146,12 +82,8 @@ export async function Footer() {
 									FAQ
 								</Link>
 							</li>
-							<FooterBlogLink />
 						</ul>
 					</div>
-
-					{/* Legal */}
-					<FooterLegalPages />
 				</div>
 
 				{/* Bottom bar */}
