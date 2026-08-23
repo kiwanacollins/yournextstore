@@ -1,4 +1,3 @@
-import type { APICollectionGetByIdResult } from "commerce-kit";
 import type { Metadata } from "next";
 import { cacheLife } from "next/cache";
 import Link from "next/link";
@@ -14,84 +13,58 @@ import {
 	BreadcrumbPage,
 	BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { commerce, getStoreSeo } from "@/lib/commerce";
+import { collectionGet, getStoreSeo, productBrowse } from "@/lib/commerce";
 import { buildCollectionBreadcrumbJsonLd, buildCollectionJsonLd, JsonLdScript } from "@/lib/json-ld";
-import { encodeVts } from "@/lib/vts";
-import { YNSMedia } from "@/lib/yns-media";
 
-// The page has no pagination, so a smart collection renders one browse page. 100 is the API's max.
-const SMART_COLLECTION_LIMIT = 100;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
+type CollectionData = NonNullable<Awaited<ReturnType<typeof collectionGet>>>;
+
+// The page has no pagination, so the collection renders in one browse page. 100 is the API's max.
+const COLLECTION_PRODUCTS_LIMIT = 100;
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
 	"use cache";
 	cacheLife("minutes");
 	const { slug } = await params;
-	const collection = await commerce.collectionGet({ idOrSlug: slug });
+	const collection = await collectionGet({ idOrSlug: slug });
 
 	if (!collection) {
 		return { title: "Collection Not Found", robots: { index: false, follow: true } };
 	}
 
 	const { storeName } = await getStoreSeo();
-	const description =
-		typeof collection.description === "string"
-			? collection.description
-			: `Shop the ${collection.name} collection at ${storeName}.`;
-	const canonical = `/collection/${collection.slug}`;
+	const description = `Shop the ${collection.title} collection at ${storeName}.`;
+	const canonical = `/collection/${collection.handle}`;
 
 	return {
-		title: collection.name,
+		title: collection.title,
 		description,
 		alternates: { canonical },
 		openGraph: {
 			type: "website",
-			title: collection.name,
+			title: collection.title,
 			description,
 			url: canonical,
-			images: collection.image ? [{ url: collection.image, alt: collection.name }] : undefined,
 		},
 		twitter: {
-			card: collection.image ? "summary_large_image" : "summary",
-			title: collection.name,
+			card: "summary",
+			title: collection.title,
 			description,
-			images: collection.image ? [collection.image] : undefined,
 		},
 	};
 }
 
-function CollectionHeader({ collection }: { collection: APICollectionGetByIdResult }) {
+function CollectionHeader({ collection }: { collection: CollectionData }) {
 	return (
 		<section className="relative overflow-hidden bg-secondary/30">
 			<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 				<div className="py-12 sm:py-16 lg:py-20">
 					<div className="max-w-2xl">
 						<h1 className="text-3xl sm:text-4xl lg:text-5xl font-medium tracking-tight text-foreground">
-							{collection.name}
+							{collection.title}
 						</h1>
-						{collection.description && (
-							<p className="mt-4 text-lg text-muted-foreground leading-relaxed">
-								{typeof collection.description === "string"
-									? collection.description
-									: "Explore our curated collection"}
-							</p>
-						)}
 					</div>
 				</div>
 			</div>
-			{collection.image && (
-				<div className="absolute top-0 right-0 w-1/2 h-full hidden lg:block">
-					<YNSMedia
-						src={collection.image}
-						alt={collection.name}
-						fill
-						sizes="50vw"
-						className="object-cover opacity-30"
-						priority
-					/>
-					<div className="absolute inset-0 bg-linear-to-r from-secondary/30 to-transparent" />
-				</div>
-			)}
 		</section>
 	);
 }
@@ -104,60 +77,15 @@ function CollectionProductsSkeleton() {
 	);
 }
 
-// Only a `manual` collection keeps its members in the join table that `collectionGet` returns —
-// the smart filters are evaluated against the whole catalog when the storefront asks for them.
-// Re-expressing each one as the equivalent product browse is what keeps those collections from
-// rendering as an empty grid.
-async function getCollectionProducts(collection: APICollectionGetByIdResult) {
-	const { filter } = collection;
-
-	if (filter.type === "manual") {
-		const ids = collection.productCollections.map((pc) => pc.product.id);
-		return (await Promise.all(ids.map((id) => commerce.productGet({ idOrSlug: id })))).filter(
-			(product) => product !== null,
-		);
-	}
-
-	if (filter.type === "variantValues") {
-		const { data } = await commerce.productBrowse({
-			active: true,
-			limit: SMART_COLLECTION_LIMIT,
-			vts: encodeVts(filter.values),
-		});
-		return data;
-	}
-
-	if (filter.type === "dynamicPrice") {
-		const { data } = await commerce.productBrowse({
-			active: true,
-			limit: SMART_COLLECTION_LIMIT,
-			priceMin: filter.min ?? undefined,
-			priceMax: filter.max ?? undefined,
-		});
-		return data;
-	}
-
-	const { data } = await commerce.productBrowse({
-		active: true,
-		limit: SMART_COLLECTION_LIMIT,
-		orderBy: "createdAt",
-		orderDirection: "desc",
+async function CollectionProducts({ collection }: { collection: CollectionData }) {
+	const { data: products } = await productBrowse({
+		collection_id: [collection.id],
+		limit: COLLECTION_PRODUCTS_LIMIT,
 	});
-
-	// A rolling "new arrivals" window has no browse equivalent, so the age bound is applied here.
-	if (typeof filter.days !== "number") {
-		return data;
-	}
-	const cutoff = Date.now() - filter.days * MS_PER_DAY;
-	return data.filter((product) => new Date(product.createdAt).getTime() >= cutoff);
-}
-
-async function CollectionProducts({ collection }: { collection: APICollectionGetByIdResult }) {
-	const products = await getCollectionProducts(collection);
 
 	return (
 		<ProductGrid
-			title={`${collection.name} Collection`}
+			title={`${collection.title} Collection`}
 			description={`${products.length} products`}
 			products={products}
 			showViewAll={false}
@@ -196,7 +124,7 @@ export default function CollectionPage(props: PageProps<"/collection/[slug]">) {
 const getCollectionData = async (slug: string) => {
 	"use cache";
 	cacheLife("minutes");
-	return commerce.collectionGet({ idOrSlug: slug });
+	return collectionGet({ idOrSlug: slug });
 };
 
 const CollectionContent = async ({ params }: { params: PageProps<"/collection/[slug]">["params"] }) => {
@@ -221,7 +149,7 @@ const CollectionContent = async ({ params }: { params: PageProps<"/collection/[s
 						</BreadcrumbItem>
 						<BreadcrumbSeparator />
 						<BreadcrumbItem>
-							<BreadcrumbPage>{collection.name}</BreadcrumbPage>
+							<BreadcrumbPage>{collection.title}</BreadcrumbPage>
 						</BreadcrumbItem>
 					</BreadcrumbList>
 				</Breadcrumb>

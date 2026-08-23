@@ -7,7 +7,7 @@ import { setCartQuantity } from "@/app/cart/actions";
 import { type Cart, type CartLineItem, getLineItemUnitPrice, useCart } from "@/app/cart/cart-context";
 import { useStoreConfig } from "@/components/store-config-provider";
 import { formatMoney } from "@/lib/money";
-import { cn, getProductThumbnail } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { YNSMedia } from "@/lib/yns-media";
 
 type CartItemProps = {
@@ -19,10 +19,8 @@ export function CartItem({ item }: CartItemProps) {
 	const { dispatch, closeCart, startMutation, syncCart, reconcile } = useCart();
 	const [isPending, startTransition] = useTransition();
 
-	const { productVariant, quantity } = item;
-	const { product } = productVariant;
+	const { quantity, thumbnail, product_handle, product_title, variant_id } = item;
 
-	const image = getProductThumbnail(productVariant.images) ?? getProductThumbnail(product.images);
 	const price = getLineItemUnitPrice(item);
 	const lineTotal = price * BigInt(quantity);
 
@@ -52,7 +50,7 @@ export function CartItem({ item }: CartItemProps) {
 						return; // newest value already sent
 					}
 					targetQuantityRef.current = null;
-					const res = await setCartQuantity(productVariant.id, latest);
+					const res = await setCartQuantity(variant_id, latest);
 					// Remember the newest server-returned cart so we can sync from it (never
 					// refetch — the layout cartGet hits a read-replica and can rebase stale).
 					if (res.success && res.cart) {
@@ -83,11 +81,11 @@ export function CartItem({ item }: CartItemProps) {
 	};
 
 	const handleRemove = () => {
-		updateQuantity({ type: "REMOVE", variantId: productVariant.id }, 0);
+		updateQuantity({ type: "REMOVE", variantId: variant_id }, 0);
 	};
 
 	const handleIncrement = () => {
-		updateQuantity({ type: "INCREASE", variantId: productVariant.id }, quantity + 1);
+		updateQuantity({ type: "INCREASE", variantId: variant_id }, quantity + 1);
 	};
 
 	const handleDecrement = () => {
@@ -95,29 +93,31 @@ export function CartItem({ item }: CartItemProps) {
 			handleRemove();
 			return;
 		}
-		updateQuantity({ type: "DECREASE", variantId: productVariant.id }, quantity - 1);
+		updateQuantity({ type: "DECREASE", variantId: variant_id }, quantity - 1);
 	};
 
 	return (
 		<div className="flex gap-3 py-4">
 			{/* Product Image */}
 			<Link
-				href={`/product/${product.slug}`}
+				href={`/product/${product_handle}`}
 				onClick={closeCart}
 				className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-secondary"
 			>
-				{image && <YNSMedia src={image} alt={product.name} fill className="object-cover" sizes="96px" />}
+				{thumbnail && (
+					<YNSMedia src={thumbnail} alt={product_title} fill className="object-cover" sizes="96px" />
+				)}
 			</Link>
 
 			{/* Product Details */}
 			<div className="flex min-w-0 flex-1 flex-col justify-between py-0.5">
 				<div className="flex items-start justify-between gap-2">
 					<Link
-						href={`/product/${product.slug}`}
+						href={`/product/${product_handle}`}
 						onClick={closeCart}
 						className="text-sm font-medium leading-tight text-foreground hover:underline line-clamp-2"
 					>
-						{product.name}
+						{product_title}
 					</Link>
 					<button
 						type="button"

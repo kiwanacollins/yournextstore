@@ -1,3 +1,4 @@
+import type { HttpTypes } from "@medusajs/types";
 import { CheckCircle } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -5,10 +6,9 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { commerce } from "@/lib/commerce";
+import { orderGet } from "@/lib/commerce";
 import { formatMoney } from "@/lib/money";
 import { getStoreConfig } from "@/lib/store-config";
-import { getProductThumbnail } from "@/lib/utils";
 import { YNSMedia } from "@/lib/yns-media";
 
 export const metadata: Metadata = {
@@ -43,23 +43,19 @@ export default function OrderSuccessPage(props: { params: Promise<{ id: string }
 const OrderDetails = async ({ params }: { params: Promise<{ id: string }> }) => {
 	const { id } = await params;
 	const { currency, locale } = await getStoreConfig();
-	const order = await commerce.orderGet({ id });
+	const order = await orderGet({ id });
 
 	if (!order) {
 		notFound();
 	}
 
-	const lineItems = order.orderData.lineItems;
-	const shippingAddress = order.orderData.shippingAddress;
-	const shipping = order.orderData.shipping;
-	const customer = order.orderData.customer;
+	const lineItems = order.items ?? [];
+	const shippingAddress = order.shipping_address;
+	const shippingMethod = order.shipping_methods?.[0];
 
-	const subtotal = lineItems.reduce((acc, item) => {
-		return acc + BigInt(item.productVariant.price) * BigInt(item.quantity);
-	}, BigInt(0));
-
-	const shippingCost = shipping ? BigInt(shipping.price) : BigInt(0);
-	const total = subtotal + shippingCost;
+	const subtotal = order.item_subtotal ?? order.subtotal ?? 0;
+	const shippingCost = order.shipping_total ?? shippingMethod?.total ?? 0;
+	const total = order.total ?? subtotal + shippingCost;
 
 	return (
 		<div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -71,10 +67,10 @@ const OrderDetails = async ({ params }: { params: Promise<{ id: string }> }) => 
 					</div>
 				</div>
 				<h1 className="text-3xl font-semibold tracking-tight">Thank you for your order!</h1>
-				<p className="text-muted-foreground mt-2">Order #{order.lookup} has been confirmed</p>
-				{customer?.email && (
+				<p className="text-muted-foreground mt-2">Order #{order.display_id} has been confirmed</p>
+				{order.email && (
 					<p className="text-sm text-muted-foreground mt-1">
-						A confirmation email will be sent to {customer.email}
+						A confirmation email will be sent to {order.email}
 					</p>
 				)}
 			</div>
@@ -86,7 +82,7 @@ const OrderDetails = async ({ params }: { params: Promise<{ id: string }> }) => 
 				</div>
 				<div className="divide-y divide-border">
 					{lineItems.map((item) => (
-						<OrderItem key={item.id} item={item} />
+						<OrderItem key={item.id} item={item} currency={currency} locale={locale} />
 					))}
 				</div>
 
@@ -96,9 +92,9 @@ const OrderDetails = async ({ params }: { params: Promise<{ id: string }> }) => 
 						<span className="text-muted-foreground">Subtotal</span>
 						<span>{formatMoney({ amount: subtotal, currency, locale })}</span>
 					</div>
-					{shipping && (
+					{shippingMethod && (
 						<div className="flex items-center justify-between text-sm">
-							<span className="text-muted-foreground">Shipping ({shipping.name})</span>
+							<span className="text-muted-foreground">Shipping ({shippingMethod.name})</span>
 							<span>{formatMoney({ amount: shippingCost, currency, locale })}</span>
 						</div>
 					)}
@@ -116,15 +112,19 @@ const OrderDetails = async ({ params }: { params: Promise<{ id: string }> }) => 
 						<h2 className="font-medium">Shipping Address</h2>
 					</div>
 					<div className="px-6 py-4 text-sm text-muted-foreground">
-						{shippingAddress.name && <p className="text-foreground font-medium">{shippingAddress.name}</p>}
-						{shippingAddress.line1 && <p>{shippingAddress.line1}</p>}
-						{shippingAddress.line2 && <p>{shippingAddress.line2}</p>}
+						{(shippingAddress.first_name || shippingAddress.last_name) && (
+							<p className="text-foreground font-medium">
+								{[shippingAddress.first_name, shippingAddress.last_name].filter(Boolean).join(" ")}
+							</p>
+						)}
+						{shippingAddress.address_1 && <p>{shippingAddress.address_1}</p>}
+						{shippingAddress.address_2 && <p>{shippingAddress.address_2}</p>}
 						<p>
-							{[shippingAddress.city, shippingAddress.state, shippingAddress.postalCode]
+							{[shippingAddress.city, shippingAddress.province, shippingAddress.postal_code]
 								.filter(Boolean)
 								.join(", ")}
 						</p>
-						{shippingAddress.country && <p>{shippingAddress.country}</p>}
+						{shippingAddress.country_code && <p>{shippingAddress.country_code.toUpperCase()}</p>}
 					</div>
 				</div>
 			)}
@@ -139,51 +139,47 @@ const OrderDetails = async ({ params }: { params: Promise<{ id: string }> }) => 
 	);
 };
 
-type OrderLineItem = {
-	id: string;
-	quantity: number;
-	productVariant: {
-		id: string;
-		price: string;
-		images: string[];
-		product: {
-			id: string;
-			name: string;
-			slug: string;
-			images: string[];
-		};
-	};
-};
-
-async function OrderItem({ item }: { item: OrderLineItem }) {
-	const { currency, locale } = await getStoreConfig();
-	const { productVariant, quantity } = item;
-	const { product } = productVariant;
-
-	const image = getProductThumbnail(productVariant.images) ?? getProductThumbnail(product.images);
-	const price = BigInt(productVariant.price);
-	const lineTotal = price * BigInt(quantity);
+async function OrderItem({
+	item,
+	currency,
+	locale,
+}: {
+	item: HttpTypes.StoreOrderLineItem;
+	currency: string;
+	locale: string;
+}) {
+	const image = item.thumbnail;
+	const lineTotal = item.total ?? item.unit_price * item.quantity;
+	const productHandle = item.product_handle ?? item.product_id;
 
 	return (
 		<div className="flex gap-4 p-6">
 			{/* Product Image */}
 			<Link
-				href={`/product/${product.slug}`}
+				href={productHandle ? `/product/${productHandle}` : "#"}
 				className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-secondary"
 			>
-				{image && <YNSMedia src={image} alt={product.name} fill className="object-cover" sizes="80px" />}
+				{image && (
+					<YNSMedia
+						src={image}
+						alt={item.product_title ?? item.title}
+						fill
+						className="object-cover"
+						sizes="80px"
+					/>
+				)}
 			</Link>
 
 			{/* Product Details */}
 			<div className="flex min-w-0 flex-1 flex-col justify-between">
 				<div>
 					<Link
-						href={`/product/${product.slug}`}
+						href={productHandle ? `/product/${productHandle}` : "#"}
 						className="text-sm font-medium leading-tight text-foreground hover:underline line-clamp-2"
 					>
-						{product.name}
+						{item.product_title ?? item.title}
 					</Link>
-					<p className="text-sm text-muted-foreground mt-1">Qty: {quantity}</p>
+					<p className="text-sm text-muted-foreground mt-1">Qty: {item.quantity}</p>
 				</div>
 				<p className="text-sm font-semibold">{formatMoney({ amount: lineTotal, currency, locale })}</p>
 			</div>

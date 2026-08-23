@@ -15,7 +15,7 @@ import {
 	BreadcrumbPage,
 	BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
-import { commerce } from "@/lib/commerce";
+import { categoryGet, collectionGet, productBrowse } from "@/lib/commerce";
 import { getFilterFacets } from "@/lib/facets";
 import { buildCategoryBreadcrumbJsonLd, JsonLdScript } from "@/lib/json-ld";
 
@@ -25,20 +25,15 @@ const PRODUCTS_PER_PAGE = 12;
 type CategoryFilterParams = {
 	page?: string;
 	collection?: string;
-	brand?: string;
-	priceMin?: string;
-	priceMax?: string;
-	vts?: string;
 };
 
-// The SDK loads the parent chain up to 2 levels deep (self -> parent -> grandparent),
-// so the canonical path is capped at 3 segments (e.g. fashion/tops/t-shirts).
-type CategoryLike = { name: string; slug: string; parent?: CategoryLike | null };
+// Medusa categories carry a flat parent_category_id chain rather than a nested `parent`
+// object, so the hierarchy here is just the category itself — no multi-level breadcrumb.
+type CategoryLike = { name: string; handle: string | null; id: string };
 
-const flattenParents = (category: CategoryLike): Array<{ name: string; slug: string }> => {
-	const parent = category.parent;
-	return [...(parent ? flattenParents(parent) : []), { name: category.name, slug: category.slug }];
-};
+const flattenParents = (category: CategoryLike): Array<{ name: string; slug: string }> => [
+	{ name: category.name, slug: category.handle ?? category.id },
+];
 
 export async function generateMetadata({
 	params,
@@ -53,17 +48,17 @@ export async function generateMetadata({
 		return { title: "Category Not Found", robots: { index: false, follow: true } };
 	}
 
-	const category = await commerce.categoryGet({ idOrSlug: slug });
-	if (!category?.active) {
+	const category = await categoryGet({ idOrSlug: slug });
+	if (!category) {
 		return { title: "Category Not Found", robots: { index: false, follow: true } };
 	}
 
-	const canonicalPath = flattenParents(category as CategoryLike)
+	const canonicalPath = flattenParents(category)
 		.map((c) => c.slug)
 		.join("/");
-	const canonical = category.seo?.canonical || `/category/${canonicalPath}`;
-	const title = category.seo?.title || category.name;
-	const description = category.seo?.description || `Shop the ${category.name} category.`;
+	const canonical = `/category/${canonicalPath}`;
+	const title = category.name;
+	const description = category.description || `Shop the ${category.name} category.`;
 
 	return {
 		title,
@@ -74,23 +69,21 @@ export async function generateMetadata({
 			title,
 			description,
 			url: canonical,
-			images: category.image ? [{ url: category.image, alt: category.name }] : undefined,
 		},
 		twitter: {
-			card: category.image ? "summary_large_image" : "summary",
+			card: "summary",
 			title,
 			description,
-			images: category.image ? [category.image] : undefined,
 		},
 	};
 }
 
 async function CategoryProducts({
-	slug,
+	categoryId,
 	canonicalPath,
 	filters,
 }: {
-	slug: string;
+	categoryId: string;
 	canonicalPath: string;
 	filters: CategoryFilterParams;
 }) {
@@ -100,16 +93,13 @@ async function CategoryProducts({
 	const currentPage = Math.max(1, Number(filters.page) || 1);
 	const offset = (currentPage - 1) * PRODUCTS_PER_PAGE;
 
-	const result = await commerce.productBrowse({
-		active: true,
-		category: slug,
+	const collection = filters.collection ? await collectionGet({ idOrSlug: filters.collection }) : null;
+
+	const result = await productBrowse({
+		category_id: [categoryId],
 		limit: PRODUCTS_PER_PAGE,
 		offset,
-		collection: filters.collection,
-		brand: filters.brand,
-		priceMin: filters.priceMin ? Number(filters.priceMin) : undefined,
-		priceMax: filters.priceMax ? Number(filters.priceMax) : undefined,
-		vts: filters.vts,
+		...(collection ? { collection_id: [collection.id] } : {}),
 	});
 
 	if (result.data.length === 0) {
@@ -120,7 +110,7 @@ async function CategoryProducts({
 		);
 	}
 
-	const totalPages = Math.ceil(result.meta.count / PRODUCTS_PER_PAGE);
+	const totalPages = Math.ceil(result.count / PRODUCTS_PER_PAGE);
 
 	return (
 		<>
@@ -165,7 +155,7 @@ export default function CategoryPage(props: {
 const getCategoryData = async (slug: string) => {
 	"use cache";
 	cacheLife("minutes");
-	return commerce.categoryGet({ idOrSlug: slug });
+	return categoryGet({ idOrSlug: slug });
 };
 
 const CategoryContent = async ({
@@ -184,17 +174,13 @@ const CategoryContent = async ({
 
 	// Both reads are cached and independent — fetch them in parallel.
 	const [category, facets] = await Promise.all([getCategoryData(slug), getFilterFacets()]);
-	if (!category?.active) {
+	if (!category) {
 		notFound();
 	}
 	// Category facet is hidden here (it's the page context), so don't count it.
-	const filtersAvailable =
-		facets.collections.length > 0 ||
-		facets.brands.length > 0 ||
-		facets.variantTypes.length > 0 ||
-		facets.priceBounds.max > 0;
+	const filtersAvailable = facets.collections.length > 0;
 
-	const hierarchy = flattenParents(category as CategoryLike);
+	const hierarchy = flattenParents(category);
 	const canonicalPath = hierarchy.map((c) => c.slug).join("/");
 	const currentPath = slugs.join("/");
 	if (currentPath !== canonicalPath) {
@@ -250,7 +236,7 @@ const CategoryContent = async ({
 					)}
 
 					<Suspense fallback={<ProductGridSkeleton />}>
-						<CategoryProducts slug={slug} canonicalPath={canonicalPath} filters={filters} />
+						<CategoryProducts categoryId={category.id} canonicalPath={canonicalPath} filters={filters} />
 					</Suspense>
 				</div>
 			</div>

@@ -1,9 +1,9 @@
-export type SortKey = "newest" | "priceAsc" | "priceDesc" | "nameAsc";
+// Medusa's product list has no native price-sort field, so price sorting is dropped
+// for now — only creation date and title (both Medusa-native `order` fields) remain.
+export type SortKey = "newest" | "nameAsc";
 
 export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
 	{ value: "newest", label: "Newest" },
-	{ value: "priceAsc", label: "Price, low to high" },
-	{ value: "priceDesc", label: "Price, high to low" },
 	{ value: "nameAsc", label: "Alphabetical" },
 ];
 
@@ -13,13 +13,9 @@ export function getSortFromParams(value: string | undefined): SortKey {
 
 export function sortToBrowseParams(sort: SortKey) {
 	switch (sort) {
-		case "priceAsc":
-			return { orderBy: "price" as const, orderDirection: "asc" as const };
-		case "priceDesc":
-			return { orderBy: "price" as const, orderDirection: "desc" as const };
 		case "nameAsc":
-			return { orderBy: "name" as const, orderDirection: "asc" as const };
+			return { order: "title" as const };
 		default:
-			return { orderBy: "createdAt" as const, orderDirection: "desc" as const };
+			return { order: "-created_at" as const };
 	}
 }

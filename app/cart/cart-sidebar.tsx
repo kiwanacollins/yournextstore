@@ -56,7 +56,7 @@ export function CartSidebar() {
 						<ScrollArea className="flex-1 px-4">
 							<div className="divide-y divide-border">
 								{items.map((item) => (
-									<CartItem key={item.productVariant.id} item={item} />
+									<CartItem key={item.variant_id} item={item} />
 								))}
 							</div>
 						</ScrollArea>

@@ -104,7 +104,7 @@ export function CartProvider({ children }: CartProviderProps) {
 		return () => window.removeEventListener("pageshow", onPageShow);
 	}, [reconcile]);
 
-	const items = useMemo(() => cart?.lineItems ?? [], [cart]);
+	const items = useMemo(() => cart?.items ?? [], [cart]);
 
 	const itemCount = useMemo(() => items.reduce((sum, item) => sum + item.quantity, 0), [items]);
 

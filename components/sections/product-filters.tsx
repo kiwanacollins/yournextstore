@@ -1,13 +1,10 @@
 "use client";
 
-import type { APIProductFiltersResult } from "commerce-kit";
 import { SlidersHorizontalIcon } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { type ReactNode, startTransition, useOptimistic, useState } from "react";
-import { useStoreConfig } from "@/components/store-config-provider";
+import { type ReactNode, startTransition, useState } from "react";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
 	Sheet,
 	SheetContent,
@@ -16,13 +13,13 @@ import {
 	SheetTitle,
 	SheetTrigger,
 } from "@/components/ui/sheet";
-import { Slider } from "@/components/ui/slider";
-import { formatMoney } from "@/lib/money";
+import type { productFilters } from "@/lib/commerce";
 import { cn } from "@/lib/utils";
-import { encodeVts, parseVts } from "@/lib/vts";
+
+type Facets = Awaited<ReturnType<typeof productFilters>>;
 
 // Search params owned by the filters, cleared by "Clear all".
-const FILTER_KEYS = ["category", "collection", "brand", "priceMin", "priceMax", "vts"] as const;
+const FILTER_KEYS = ["category", "collection"] as const;
 
 // Max entries shown per filter group before collapsing the rest behind "Show more".
 const VISIBLE_ENTRY_LIMIT = 10;
@@ -60,27 +57,15 @@ function CollapsibleList<T>({
 }
 
 type FilterControlsProps = {
-	facets: APIProductFiltersResult;
+	facets: Facets;
 	showCategories?: boolean;
 	showCollections?: boolean;
 };
 
 function FilterControls({ facets, showCategories = true, showCollections = true }: FilterControlsProps) {
-	const { currency, locale } = useStoreConfig();
 	const router = useRouter();
 	const pathname = usePathname();
 	const searchParams = useSearchParams();
-
-	const selectedVts = parseVts(searchParams.get("vts"));
-	const [optimisticVts, setOptimisticVts] = useOptimistic(selectedVts);
-
-	const { min: priceFloor, max: priceCeil } = facets.priceBounds;
-	const priceMinParam = searchParams.get("priceMin");
-	const priceMaxParam = searchParams.get("priceMax");
-	const [priceRange, setPriceRange] = useState<[number, number]>([
-		priceMinParam ? Number(priceMinParam) : priceFloor,
-		priceMaxParam ? Number(priceMaxParam) : priceCeil,
-	]);
 
 	const commit = (mutate: (params: URLSearchParams) => void) => {
 		const params = new URLSearchParams(searchParams.toString());
@@ -102,25 +87,7 @@ function FilterControls({ facets, showCategories = true, showCollections = true 
 		});
 	};
 
-	const toggleVariantValue = (label: string, value: string, checked: boolean) => {
-		const current = optimisticVts[label] ?? [];
-		const next = checked ? [...new Set([...current, value])] : current.filter((v) => v !== value);
-		const nextRecord = { ...optimisticVts, [label]: next };
-		startTransition(() => {
-			setOptimisticVts(nextRecord);
-			const encoded = encodeVts(nextRecord);
-			commit((params) => {
-				if (encoded) {
-					params.set("vts", encoded);
-				} else {
-					params.delete("vts");
-				}
-			});
-		});
-	};
-
 	const clearAll = () => {
-		setPriceRange([priceFloor, priceCeil]);
 		commit((params) => {
 			for (const key of FILTER_KEYS) {
 				params.delete(key);
@@ -129,14 +96,10 @@ function FilterControls({ facets, showCategories = true, showCollections = true 
 	};
 
 	const hasActiveFilters = FILTER_KEYS.some((key) => searchParams.has(key));
-	const hasPrice = priceCeil > priceFloor;
 	// All groups that will render, in display order — only the first opens by default.
 	const accordionGroups = [
 		...(showCategories && facets.categories.length > 0 ? ["categories"] : []),
 		...(showCollections && facets.collections.length > 0 ? ["collections"] : []),
-		...facets.variantTypes.map((vt) => `vt-${vt.label}`),
-		...(facets.brands.length > 0 ? ["brands"] : []),
-		...(hasPrice ? ["price"] : []),
 	];
 	const accordionDefault = accordionGroups.slice(0, 1);
 
@@ -164,12 +127,12 @@ function FilterControls({ facets, showCategories = true, showCollections = true 
 								items={facets.categories}
 								className="space-y-1"
 								renderItem={(category) => {
-									const isActive = searchParams.get("category") === category.slug;
+									const isActive = searchParams.get("category") === category.handle;
 									return (
-										<li key={category.slug}>
+										<li key={category.id}>
 											<button
 												type="button"
-												onClick={() => setSingle("category", category.slug)}
+												onClick={() => setSingle("category", category.handle ?? category.id)}
 												className={cn(
 													"w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary",
 													isActive ? "font-medium text-foreground" : "text-muted-foreground",
@@ -193,119 +156,23 @@ function FilterControls({ facets, showCategories = true, showCollections = true 
 								items={facets.collections}
 								className="space-y-1"
 								renderItem={(collection) => {
-									const isActive = searchParams.get("collection") === collection.slug;
+									const isActive = searchParams.get("collection") === collection.handle;
 									return (
-										<li key={collection.slug}>
+										<li key={collection.id}>
 											<button
 												type="button"
-												onClick={() => setSingle("collection", collection.slug)}
+												onClick={() => setSingle("collection", collection.handle ?? collection.id)}
 												className={cn(
 													"w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary",
 													isActive ? "font-medium text-foreground" : "text-muted-foreground",
 												)}
 											>
-												{collection.name}
+												{collection.title}
 											</button>
 										</li>
 									);
 								}}
 							/>
-						</AccordionContent>
-					</AccordionItem>
-				)}
-
-				{facets.variantTypes.map((vt) => {
-					const selectedValues = optimisticVts[vt.label] ?? [];
-					return (
-						<AccordionItem key={vt.label} value={`vt-${vt.label}`}>
-							<AccordionTrigger className="text-sm">{vt.label}</AccordionTrigger>
-							<AccordionContent>
-								<CollapsibleList
-									items={vt.values}
-									className="space-y-2"
-									renderItem={(value) => {
-										const id = `${vt.label}-${value}`;
-										const checked = selectedValues.includes(value);
-										return (
-											<li key={value} className="flex items-center gap-2">
-												<Checkbox
-													id={id}
-													checked={checked}
-													onCheckedChange={(state) => toggleVariantValue(vt.label, value, state === true)}
-												/>
-												<label htmlFor={id} className="cursor-pointer text-sm text-muted-foreground">
-													{value}
-												</label>
-											</li>
-										);
-									}}
-								/>
-							</AccordionContent>
-						</AccordionItem>
-					);
-				})}
-
-				{facets.brands.length > 0 && (
-					<AccordionItem value="brands">
-						<AccordionTrigger className="text-sm">Brands</AccordionTrigger>
-						<AccordionContent>
-							<CollapsibleList
-								items={facets.brands}
-								className="space-y-1"
-								renderItem={(brand) => {
-									const isActive = searchParams.get("brand") === brand.slug;
-									return (
-										<li key={brand.slug}>
-											<button
-												type="button"
-												onClick={() => setSingle("brand", brand.slug)}
-												className={cn(
-													"w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary",
-													isActive ? "font-medium text-foreground" : "text-muted-foreground",
-												)}
-											>
-												{brand.name}
-											</button>
-										</li>
-									);
-								}}
-							/>
-						</AccordionContent>
-					</AccordionItem>
-				)}
-
-				{hasPrice && (
-					<AccordionItem value="price">
-						<AccordionTrigger className="text-sm">Price</AccordionTrigger>
-						<AccordionContent>
-							<div className="px-1 pt-2">
-								<Slider
-									value={priceRange}
-									min={priceFloor}
-									max={priceCeil}
-									step={1}
-									minStepsBetweenThumbs={1}
-									onValueChange={(value) => setPriceRange(value as [number, number])}
-									onValueCommit={([min = priceFloor, max = priceCeil]) =>
-										commit((params) => {
-											if (min <= priceFloor) {
-												params.delete("priceMin");
-											} else {
-												params.set("priceMin", String(min));
-											}
-											if (max >= priceCeil) {
-												params.delete("priceMax");
-											} else {
-												params.set("priceMax", String(max));
-											}
-										})
-									}
-								/>
-								<div className="mt-3 flex justify-between text-xs text-muted-foreground">
-									<span>{formatMoney({ amount: priceRange[0], currency, locale })}</span>
-									<span>{formatMoney({ amount: priceRange[1], currency, locale })}</span>
-								</div>
-							</div>
 						</AccordionContent>
 					</AccordionItem>
 				)}

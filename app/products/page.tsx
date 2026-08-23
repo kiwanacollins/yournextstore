@@ -5,17 +5,15 @@ import { ListingPagination } from "@/components/listing-pagination";
 import { ProductCard } from "@/components/product-card";
 import { ProductGridSkeleton } from "@/components/product-grid-skeleton";
 import { ProductFilters, ProductFiltersMobile } from "@/components/sections/product-filters";
-import { commerce, getStoreSeo } from "@/lib/commerce";
+import { categoryGet, collectionGet, getStoreSeo, productBrowse } from "@/lib/commerce";
 import { getFilterFacets } from "@/lib/facets";
 import { SortLinks, SortSelect } from "./products-sort-select";
 
 const PRODUCTS_PER_PAGE = 12;
 
 const sortOptions = [
-	{ value: "newest", label: "Newest", orderBy: "createdAt", orderDirection: "desc" },
-	{ value: "price-asc", label: "Price: Low to High", orderBy: "price", orderDirection: "asc" },
-	{ value: "price-desc", label: "Price: High to Low", orderBy: "price", orderDirection: "desc" },
-	{ value: "name", label: "Name: A–Z", orderBy: "name", orderDirection: "asc" },
+	{ value: "newest", label: "Newest", order: "-created_at" },
+	{ value: "name", label: "Name: A–Z", order: "title" },
 ] as const;
 
 type ProductFilterParams = {
@@ -23,10 +21,6 @@ type ProductFilterParams = {
 	sort?: string;
 	category?: string;
 	collection?: string;
-	brand?: string;
-	priceMin?: string;
-	priceMax?: string;
-	vts?: string;
 };
 
 export async function generateMetadata({
@@ -64,21 +58,20 @@ async function ProductList({ filters }: { filters: ProductFilterParams }) {
 	const offset = (currentPage - 1) * PRODUCTS_PER_PAGE;
 	const sortOption = sortOptions.find((s) => s.value === filters.sort) ?? sortOptions[0];
 
-	const result = await commerce.productBrowse({
-		active: true,
+	const [category, collection] = await Promise.all([
+		filters.category ? categoryGet({ idOrSlug: filters.category }) : null,
+		filters.collection ? collectionGet({ idOrSlug: filters.collection }) : null,
+	]);
+
+	const result = await productBrowse({
 		limit: PRODUCTS_PER_PAGE,
 		offset,
-		orderBy: sortOption.orderBy,
-		orderDirection: sortOption.orderDirection,
-		category: filters.category,
-		collection: filters.collection,
-		brand: filters.brand,
-		priceMin: filters.priceMin ? Number(filters.priceMin) : undefined,
-		priceMax: filters.priceMax ? Number(filters.priceMax) : undefined,
-		vts: filters.vts,
+		order: sortOption.order,
+		...(category ? { category_id: [category.id] } : {}),
+		...(collection ? { collection_id: [collection.id] } : {}),
 	});
 
-	const totalPages = Math.ceil(result.meta.count / PRODUCTS_PER_PAGE);
+	const totalPages = Math.ceil(result.count / PRODUCTS_PER_PAGE);
 
 	if (result.data.length === 0) {
 		return (
@@ -118,12 +111,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
 	// shell without making the route blocking. Runtime `searchParams` is read inside the
 	// Suspense boundary below (see `ProductSection`).
 	const facets = await getFilterFacets();
-	const filtersAvailable =
-		facets.categories.length > 0 ||
-		facets.collections.length > 0 ||
-		facets.brands.length > 0 ||
-		facets.variantTypes.length > 0 ||
-		facets.priceBounds.max > 0;
+	const filtersAvailable = facets.categories.length > 0 || facets.collections.length > 0;
 
 	return (
 		<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">

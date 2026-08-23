@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+medusa/**/node_modules
+payload/**/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -9,6 +11,15 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+
+# medusa
+medusa/**/.medusa
+medusa/**/dist
+medusa/apps/backend/uploads
+
+# docker
+postgres_data
+redis_data
 
 # testing
 /coverage

@@ -1,8 +1,8 @@
 "use client";
 
-// Catches errors thrown by the root layout itself (e.g. the meGetCached read),
-// which the regular app/error.tsx boundary cannot reach. Renders its own
-// <html>/<body> because the root layout is gone when this shows.
+// Catches errors thrown by the root layout itself (e.g. a store-config or
+// commerce read), which the regular app/error.tsx boundary cannot reach.
+// Renders its own <html>/<body> because the root layout is gone when this shows.
 export default function GlobalError({
 	error,
 	retry,

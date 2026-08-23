@@ -8,22 +8,23 @@ import Link from "next/link";
 import { ThemeProvider } from "next-themes";
 import { Suspense } from "react";
 import { CartBootstrap, CartProvider } from "@/app/cart/cart-context";
+import { type Cart, mapStoreCart } from "@/app/cart/cart-math";
 import { CartSidebar } from "@/app/cart/cart-sidebar";
 import { CartButton } from "@/app/cart-button";
 import { Footer } from "@/app/footer";
 import { Navbar, type NavLink } from "@/app/navbar";
 import { CookieConsent } from "@/components/cookie-consent";
 import { ErrorOverlayRemover, NavigationReporter } from "@/components/devtools";
-import { NewsletterDialog } from "@/components/newsletter-dialog";
 import { SearchInput } from "@/components/search/search-input";
-import { StoreChatSection } from "@/components/store-chat/store-chat-section";
 import { StoreConfigProvider } from "@/components/store-config-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Toaster } from "@/components/ui/sonner";
-import { commerce, getCanonicalUrl, getStoreFaviconUrl, meGetCached } from "@/lib/commerce";
+import { cartGet, collectionBrowse, getCanonicalUrl, getStoreSeo } from "@/lib/commerce";
 import { getCartCookieJson } from "@/lib/cookies";
 import { StoreJsonLd } from "@/lib/json-ld";
 import { getStoreConfig } from "@/lib/store-config";
+
+const DEFAULT_FAVICON = "/logo.svg";
 
 const geistSans = Geist({
 	variable: "--font-geist-sans",
@@ -38,13 +39,10 @@ const geistMono = Geist_Mono({
 async function getStoreMetadata(): Promise<Metadata> {
 	"use cache";
 	cacheLife("hours");
-	const me = await meGetCached();
-	const storeName = me.store.name || "Your Next Store";
-	const storeDescription = me.store.settings?.storeDescription || "Your next e-commerce store";
-	const faviconUrl = getStoreFaviconUrl(me.store.settings) ?? "/logo.svg";
-	const storeLogo =
-		typeof me.store.settings?.logo === "string" ? me.store.settings.logo : me.store.settings?.logo?.imageUrl;
-	const ogImage = me.store.settings?.ogimage || storeLogo || "/logo.svg";
+	const { storeName, storeDescription: rawDescription } = await getStoreSeo();
+	const storeDescription = rawDescription ?? undefined;
+	const faviconUrl = DEFAULT_FAVICON;
+	const ogImage = DEFAULT_FAVICON;
 
 	return {
 		title: {
@@ -82,11 +80,8 @@ async function getStoreMetadata(): Promise<Metadata> {
 			},
 		},
 		icons: {
-			icon: [
-				{ url: faviconUrl, sizes: "any", type: "image/svg+xml" },
-				{ url: faviconUrl, sizes: "192x192", type: "image/png" },
-			],
-			apple: [{ url: faviconUrl, sizes: "180x180" }],
+			icon: [{ url: faviconUrl, sizes: "any", type: "image/svg+xml" }],
+			apple: [{ url: faviconUrl }],
 			shortcut: faviconUrl,
 		},
 		manifest: "/manifest.webmanifest",
@@ -100,7 +95,7 @@ export async function generateMetadata(): Promise<Metadata> {
 	return { ...metadata, metadataBase: new URL(getCanonicalUrl()) };
 }
 
-async function getInitialCart() {
+async function getInitialCart(): Promise<{ cart: Cart | null; cartId: string | null }> {
 	const cartCookie = await getCartCookieJson();
 
 	if (!cartCookie?.id) {
@@ -108,8 +103,8 @@ async function getInitialCart() {
 	}
 
 	try {
-		const cart = await commerce.cartGet({ cartId: cartCookie.id });
-		return { cart: cart ?? null, cartId: cartCookie.id };
+		const cart = await cartGet({ cartId: cartCookie.id });
+		return { cart: cart ? mapStoreCart(cart) : null, cartId: cartCookie.id };
 	} catch {
 		return { cart: null, cartId: cartCookie.id };
 	}
@@ -118,19 +113,14 @@ async function getInitialCart() {
 async function getNavLinks(): Promise<NavLink[]> {
 	"use cache";
 	cacheLife("hours");
-	const [collections, me] = await Promise.all([
-		commerce.collectionBrowse({ limit: 5 }),
-		meGetCached().catch(() => null),
-	]);
-	const blogEnabled = me?.store.settings?.enabledTools?.blog ?? false;
+	const collections = await collectionBrowse({ limit: 5 });
 	return [
 		{ href: "/", label: "Home" },
 		{ href: "/products", label: "Products" },
-		...collections.data.map((collection) => ({
-			href: `/collection/${collection.slug}`,
-			label: collection.name,
+		...collections.data.map((collection: { handle: string | null; id: string; title: string }) => ({
+			href: `/collection/${collection.handle ?? collection.id}`,
+			label: collection.title,
 		})),
-		...(blogEnabled ? [{ href: "/blog", label: "Blog" }] : []),
 	];
 }
 
@@ -189,31 +179,9 @@ async function CartProviderWrapper({ children }: { children: React.ReactNode }) 
 				<Suspense>
 					<CartBootstrapper />
 				</Suspense>
-				{/* Inside CartProvider on purpose: add-to-cart from chat uses the cart context.
-			    Also renders the "Made with YNS" badge so badge and launcher share one dock. */}
-				<Suspense>
-					<StoreChatSection />
-				</Suspense>
 			</CartProvider>
 		</StoreConfigProvider>
 	);
-}
-
-async function getHtmlLang(): Promise<string> {
-	try {
-		const me = await meGetCached();
-		return me.store.settings?.defaultLanguage?.split("-")[0] ?? "en";
-	} catch {
-		return "en";
-	}
-}
-
-async function NewsletterPopupSection() {
-	const me = await meGetCached();
-	if (!me.store.settings?.enabledTools?.newsletterPopup) {
-		return null;
-	}
-	return <NewsletterDialog settings={me.store.settings?.newsletterPopup} />;
 }
 
 export default async function RootLayout({
@@ -222,11 +190,10 @@ export default async function RootLayout({
 	children: React.ReactNode;
 }>) {
 	const env = process.env.VERCEL_ENV || "development";
-	const lang = await getHtmlLang();
 
 	return (
 		// suppressHydrationWarning: next-themes sets the theme class on <html> before hydration.
-		<html lang={lang} suppressHydrationWarning>
+		<html lang="en" suppressHydrationWarning>
 			<body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
 				{/* DO NOT REMOVE / REORDER: required for GDPR + GTM Consent Mode v2. Must stay at top of <body>. */}
 				<Suspense>
@@ -238,9 +205,6 @@ export default async function RootLayout({
 				<ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
 					<Suspense>
 						<CartProviderWrapper>{children}</CartProviderWrapper>
-					</Suspense>
-					<Suspense>
-						<NewsletterPopupSection />
 					</Suspense>
 					<Toaster richColors position="top-center" />
 				</ThemeProvider>

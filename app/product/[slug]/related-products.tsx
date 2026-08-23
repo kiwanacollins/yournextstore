@@ -1,8 +1,8 @@
 import { Suspense } from "react";
 import { ProductGrid } from "@/components/sections/product-grid";
-import { commerce } from "@/lib/commerce";
+import { productBrowse } from "@/lib/commerce";
 
-export function RelatedProducts(props: { productId: string; categorySlug?: string }) {
+export function RelatedProducts(props: { productId: string; categoryId?: string }) {
 	return (
 		<Suspense>
 			<RelatedProductsContent {...props} />
@@ -10,17 +10,10 @@ export function RelatedProducts(props: { productId: string; categorySlug?: strin
 	);
 }
 
-async function RelatedProductsContent({
-	productId,
-	categorySlug,
-}: {
-	productId: string;
-	categorySlug?: string;
-}) {
-	const result = await commerce.productBrowse({
-		active: true,
+async function RelatedProductsContent({ productId, categoryId }: { productId: string; categoryId?: string }) {
+	const result = await productBrowse({
 		limit: 7,
-		...(categorySlug ? { category: categorySlug } : {}),
+		...(categoryId ? { category_id: [categoryId] } : {}),
 	});
 
 	const related = result.data.filter((p) => p.id !== productId).slice(0, 6);

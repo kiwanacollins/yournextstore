@@ -2,7 +2,6 @@ import { Suspense } from "react";
 import { ProductGridSkeleton } from "@/components/product-grid-skeleton";
 import { About } from "@/components/sections/about";
 import { Hero } from "@/components/sections/hero";
-import { Newsletter } from "@/components/sections/newsletter";
 import { ProductGrid } from "@/components/sections/product-grid";
 
 function FeaturedProductsSkeleton() {
@@ -27,7 +26,6 @@ export default function Home() {
 				<ProductGrid title="Featured Products" limit={6} />
 			</Suspense>
 			<About />
-			<Newsletter />
 		</>
 	);
 }

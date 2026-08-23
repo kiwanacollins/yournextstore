@@ -44,13 +44,13 @@ export function QuickAddButton({
 		dispatch({
 			type: "ADD_ITEM",
 			item: {
+				id: variantId,
 				quantity: 1,
-				productVariant: {
-					id: variantId,
-					price: variantPrice,
-					images: variantImages,
-					product,
-				},
+				unit_price: Number(variantPrice),
+				variant_id: variantId,
+				product_handle: product.slug,
+				product_title: product.name,
+				thumbnail: variantImages[0] ?? product.images[0] ?? null,
 			},
 		});
 
@@ -58,7 +58,7 @@ export function QuickAddButton({
 			// The server clamps to available stock and still returns the cart — surface
 			// the failure instead of letting the optimistic item silently vanish.
 			const result = await addToCart(variantId, 1);
-			const line = result.cart?.lineItems.find((item) => item.productVariant.id === variantId);
+			const line = result.cart?.items.find((item) => item.variant_id === variantId);
 			if (result.success && result.cart && line) {
 				syncCart(result.cart);
 			} else {

@@ -5,11 +5,9 @@ import { toast } from "sonner";
 import { addToCart } from "@/app/cart/actions";
 import { useCart } from "@/app/cart/cart-context";
 import { QuantitySelector } from "@/app/product/[slug]/quantity-selector";
-import { RestockNotify } from "@/app/product/[slug]/restock-notify";
 import { TrustBadges } from "@/app/product/[slug]/trust-badges";
 import { useSelectedVariant } from "@/app/product/[slug]/use-selected-variant";
 import { VariantSelector } from "@/app/product/[slug]/variant-selector";
-import { useVolumePricing, VolumePricingDisplay, type VolumeTier } from "@/app/product/[slug]/volume-pricing";
 import { useStoreConfig } from "@/components/store-config-provider";
 import { formatMoney } from "@/lib/money";
 import { trackAddToCart } from "@/lib/track";
@@ -28,10 +26,8 @@ type Variant = {
 		variantValue: {
 			id: string;
 			value: string;
-			colorValue: string | null;
 			variantType: {
 				id: string;
-				type: "string" | "color";
 				label: string;
 			};
 		};
@@ -47,20 +43,11 @@ type AddToCartButtonProps = {
 		images: string[];
 	};
 	summary?: string | null;
-	volumePricingTiers?: VolumeTier[];
-	/** Show a "remind me when back in stock" flow when out of stock (Restock Notifications module). */
-	restockNotificationsEnabled?: boolean;
 };
 
 const LOW_STOCK_THRESHOLD = 5;
 
-export function AddToCartButton({
-	variants,
-	product,
-	summary,
-	volumePricingTiers = [],
-	restockNotificationsEnabled = false,
-}: AddToCartButtonProps) {
+export function AddToCartButton({ variants, product, summary }: AddToCartButtonProps) {
 	const { currency, locale } = useStoreConfig();
 	const [quantity, setQuantity] = useState(1);
 	const { items, openCart, dispatch, syncCart, reconcile, startMutation } = useCart();
@@ -72,13 +59,7 @@ export function AddToCartButton({
 	const maxQuantity = selectedVariant?.stock ?? 99;
 	const effectiveQuantity = isOutOfStock ? 1 : Math.min(quantity, maxQuantity);
 
-	const { resolvedTiers, volumePrice } = useVolumePricing(
-		volumePricingTiers,
-		selectedVariant?.id,
-		effectiveQuantity,
-	);
-
-	const unitPrice = volumePrice ?? selectedVariant?.price;
+	const unitPrice = selectedVariant?.price;
 	const totalPrice = unitPrice ? BigInt(unitPrice) * BigInt(effectiveQuantity) : null;
 
 	const buttonText = useMemo(() => {
@@ -142,7 +123,7 @@ export function AddToCartButton({
 
 		const variantId = selectedVariant.id;
 		const addedQuantity = effectiveQuantity;
-		const previousQuantity = items.find((item) => item.productVariant.id === variantId)?.quantity ?? 0;
+		const previousQuantity = items.find((item) => item.variant_id === variantId)?.quantity ?? 0;
 
 		trackAddToCart(selectedVariant, product.name, addedQuantity);
 
@@ -155,13 +136,13 @@ export function AddToCartButton({
 		dispatch({
 			type: "ADD_ITEM",
 			item: {
+				id: variantId,
 				quantity: addedQuantity,
-				productVariant: {
-					id: variantId,
-					price: selectedVariant.price,
-					images: selectedVariant.images,
-					product,
-				},
+				unit_price: Number(selectedVariant.price),
+				variant_id: variantId,
+				product_handle: product.slug,
+				product_title: product.name,
+				thumbnail: selectedVariant.images[0] ?? product.images[0] ?? null,
 			},
 		});
 
@@ -169,7 +150,7 @@ export function AddToCartButton({
 			// The server clamps line quantities to available stock and still responds
 			// with the updated cart — sync from the RETURNED cart; reconcile only on failure.
 			const result = await addToCart(variantId, addedQuantity);
-			const line = result.cart?.lineItems.find((item) => item.productVariant.id === variantId);
+			const line = result.cart?.items.find((item) => item.variant_id === variantId);
 			if (result.success && result.cart && line) {
 				syncCart(result.cart);
 				if (line.quantity < previousQuantity + addedQuantity) {
@@ -238,21 +219,15 @@ export function AddToCartButton({
 				disabled={isOutOfStock}
 			/>
 
-			<VolumePricingDisplay tiers={resolvedTiers} quantity={effectiveQuantity} volumePrice={volumePrice} />
-
-			{isOutOfStock && restockNotificationsEnabled && selectedVariant ? (
-				<RestockNotify productVariantId={selectedVariant.id} productName={product.name} />
-			) : (
-				<form onSubmit={handleSubmit}>
-					<button
-						type="submit"
-						disabled={!selectedVariant || isOutOfStock}
-						className="w-full h-14 bg-foreground text-background py-4 px-8 rounded-full text-base font-medium tracking-wide hover:bg-foreground/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-					>
-						{buttonText}
-					</button>
-				</form>
-			)}
+			<form onSubmit={handleSubmit}>
+				<button
+					type="submit"
+					disabled={!selectedVariant || isOutOfStock}
+					className="w-full h-14 bg-foreground text-background py-4 px-8 rounded-full text-base font-medium tracking-wide hover:bg-foreground/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+				>
+					{buttonText}
+				</button>
+			</form>
 
 			<TrustBadges />
 		</div>

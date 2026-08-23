@@ -1,48 +1,31 @@
 import type { MetadataRoute } from "next";
-import { commerce, getCanonicalUrl, meGetCached } from "@/lib/commerce";
+import { collectionBrowse, getCanonicalUrl, productBrowse } from "@/lib/commerce";
 
 const PAGE_SIZE = 100;
 const MAX_PAGES = 50;
 
 async function getAllProducts() {
-	const products: { slug: string; updatedAt: string; images: string[] }[] = [];
+	const products: { slug: string; updatedAt: string | null; images: string[] }[] = [];
 	for (let page = 0; page < MAX_PAGES; page++) {
-		const result = await commerce.productBrowse({
-			active: true,
+		const result = await productBrowse({
 			limit: PAGE_SIZE,
 			offset: page * PAGE_SIZE,
 		});
-		products.push(...result.data.map((p) => ({ slug: p.slug, updatedAt: p.updatedAt, images: p.images })));
+		products.push(
+			...result.data.map((p) => ({
+				slug: p.handle ?? p.id,
+				updatedAt: p.updated_at,
+				images: (p.images ?? []).map((img) => img.url),
+			})),
+		);
 		if (result.data.length < PAGE_SIZE) break;
 	}
 	return products;
 }
 
 async function getAllCollections() {
-	const result = await commerce.collectionBrowse({ active: true, limit: 200 });
-	return result.data.map((c) => ({ slug: c.slug, lastModified: c.createdAt }));
-}
-
-async function getAllLegalPages() {
-	const result = await commerce.legalPageBrowse();
-	return result.data.map((p) => ({ path: p.href, updatedAt: p.updatedAt }));
-}
-
-async function getContactFormEnabled() {
-	const me = await meGetCached().catch(() => null);
-	return me?.store.settings?.enabledTools?.contactForm ?? false;
-}
-
-async function getBlogState() {
-	const me = await meGetCached().catch(() => null);
-	if (!me?.store.settings?.enabledTools?.blog) {
-		return { enabled: false, posts: [] as { slug: string; lastModified: string }[] };
-	}
-	const result = await commerce.postBrowse({ active: true, limit: 200 }).catch(() => ({ data: [] }));
-	return {
-		enabled: true,
-		posts: result.data.map((p) => ({ slug: p.slug, lastModified: p.publishedAt ?? p.createdAt })),
-	};
+	const result = await collectionBrowse({ limit: 200 });
+	return result.data.map((c) => ({ slug: c.handle ?? c.id, lastModified: c.created_at }));
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
@@ -56,26 +39,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 		{ url: `${baseUrl}/faq`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
 	];
 
-	const [products, collections, legalPages, blog, contactFormEnabled] = await Promise.all([
+	const [products, collections] = await Promise.all([
 		getAllProducts().catch(() => []),
 		getAllCollections().catch(() => []),
-		getAllLegalPages().catch(() => []),
-		getBlogState().catch(() => ({ enabled: false, posts: [] })),
-		getContactFormEnabled().catch(() => false),
 	]);
-
-	if (contactFormEnabled) {
-		staticRoutes.push({
-			url: `${baseUrl}/contact`,
-			lastModified: now,
-			changeFrequency: "monthly",
-			priority: 0.5,
-		});
-	}
 
 	const productRoutes: MetadataRoute.Sitemap = products.map((p) => ({
 		url: `${baseUrl}/product/${p.slug}`,
-		lastModified: new Date(p.updatedAt),
+		lastModified: p.updatedAt ? new Date(p.updatedAt) : now,
 		changeFrequency: "weekly",
 		priority: 0.8,
 		images: p.images.length > 0 ? p.images : undefined,
@@ -88,24 +59,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 		priority: 0.7,
 	}));
 
-	const legalRoutes: MetadataRoute.Sitemap = legalPages.map((p) => ({
-		url: `${baseUrl}/legal${p.path}`,
-		lastModified: new Date(p.updatedAt),
-		changeFrequency: "yearly",
-		priority: 0.3,
-	}));
-
-	const blogRoutes: MetadataRoute.Sitemap = blog.enabled
-		? [
-				{ url: `${baseUrl}/blog`, lastModified: now, changeFrequency: "weekly", priority: 0.6 },
-				...blog.posts.map((p) => ({
-					url: `${baseUrl}/blog/${p.slug}`,
-					lastModified: new Date(p.lastModified),
-					changeFrequency: "monthly" as const,
-					priority: 0.5,
-				})),
-			]
-		: [];
-
-	return [...staticRoutes, ...productRoutes, ...collectionRoutes, ...legalRoutes, ...blogRoutes];
+	return [...staticRoutes, ...productRoutes, ...collectionRoutes];
 }

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cacheLife } from "next/cache";
 import Link from "next/link";
-import { getStoreSeo, meGetCached } from "@/lib/commerce";
+import { getStoreSeo } from "@/lib/commerce";
 import { JsonLdScript } from "@/lib/json-ld";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -24,23 +24,15 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 async function getStoreInfo() {
-	try {
-		const me = await meGetCached();
-		return {
-			storeName: me.store.name || "our store",
-			storeDescription: me.store.settings?.storeDescription || null,
-			contactFormEnabled: me.store.settings?.enabledTools?.contactForm ?? false,
-		};
-	} catch {
-		return { storeName: "our store", storeDescription: null, contactFormEnabled: false };
-	}
+	const { storeName, storeDescription } = await getStoreSeo();
+	return { storeName: storeName || "our store", storeDescription };
 }
 
 export default async function AboutPage() {
 	"use cache";
 	cacheLife("hours");
 
-	const { storeName, storeDescription, contactFormEnabled } = await getStoreInfo();
+	const { storeName, storeDescription } = await getStoreInfo();
 
 	const aboutJsonLd = {
 		"@context": "https://schema.org",
@@ -119,14 +111,6 @@ export default async function AboutPage() {
 					>
 						Shop products
 					</Link>
-					{contactFormEnabled && (
-						<Link
-							href="/contact"
-							className="inline-flex h-11 items-center justify-center rounded-full border border-border px-8 font-medium text-foreground transition-colors hover:bg-secondary"
-						>
-							Contact us
-						</Link>
-					)}
 				</div>
 			</div>
 		</div>

@@ -7,10 +7,8 @@ import { cn } from "@/lib/utils";
 type VariantValue = {
 	id: string;
 	value: string;
-	colorValue: string | null;
 	variantType: {
 		id: string;
-		type: "string" | "color";
 		label: string;
 	};
 };
@@ -27,12 +25,10 @@ type Variant = {
 type VariantOption = {
 	id: string;
 	value: string;
-	colorValue: string | null;
 };
 
 type VariantGroup = {
 	label: string;
-	type: "string" | "color";
 	options: VariantOption[];
 };
 
@@ -52,14 +48,10 @@ function processVariants(variants: Variant[]) {
 
 	const groupedByLabel = allCombinations.reduce(
 		(acc, { variantValue }) => {
-			const { label, type } = variantValue.variantType;
+			const { label } = variantValue.variantType;
 
 			if (!acc[label]) {
-				acc[label] = {
-					label,
-					type,
-					options: [],
-				};
+				acc[label] = { label, options: [] };
 				seenOptionIds.set(label, new Set());
 			}
 
@@ -69,7 +61,6 @@ function processVariants(variants: Variant[]) {
 				acc[label].options.push({
 					id: variantValue.id,
 					value: variantValue.value,
-					colorValue: variantValue.colorValue,
 				});
 			}
 
@@ -143,84 +134,34 @@ export function VariantSelector({ variants }: VariantSelectorProps) {
 
 	return (
 		<div className="space-y-8">
-			{groupsWithChoices.map((group) => {
-				const selectedOptionId = selectedOptions[group.label];
-				const selectedOption = selectedOptionId
-					? optionsById.get(group.label)?.get(selectedOptionId)
-					: undefined;
+			{groupsWithChoices.map((group) => (
+				<fieldset key={group.label} className="border-0 p-0 m-0">
+					<div className="mb-3 flex items-center justify-between">
+						<legend className="text-sm font-medium">{group.label}</legend>
+					</div>
+					<div className="flex flex-wrap gap-3">
+						{group.options.map((option) => {
+							const isSelected = selectedOptions[group.label] === option.id;
 
-				return (
-					<fieldset key={group.label} className="border-0 p-0 m-0">
-						{group.type === "color" ? (
-							<>
-								<div className="mb-3 flex items-center justify-between">
-									<legend className="text-sm font-medium">{group.label}</legend>
-									{selectedOption && (
-										<span className="text-sm text-muted-foreground">{selectedOption.value}</span>
+							return (
+								<button
+									key={option.id}
+									type="button"
+									onClick={() => handleOptionSelect(group.label, option.id)}
+									className={cn(
+										"flex flex-col items-center rounded-lg border-2 px-6 py-3 transition-all duration-200",
+										isSelected
+											? "border-foreground bg-foreground text-background"
+											: "border-border bg-background hover:border-muted-foreground",
 									)}
-								</div>
-								<div className="flex gap-3">
-									{group.options.map((option) => {
-										const isSelected = selectedOptions[group.label] === option.id;
-										const isLightColor =
-											option.colorValue?.toUpperCase() === "#FFFFFF" ||
-											option.colorValue?.toUpperCase() === "#FFFFF0" ||
-											option.colorValue?.toUpperCase() === "#FFF";
-
-										return (
-											<button
-												key={option.id}
-												type="button"
-												onClick={() => handleOptionSelect(group.label, option.id)}
-												className={cn(
-													"relative h-12 w-12 rounded-full transition-all duration-200",
-													isSelected
-														? "ring-2 ring-foreground ring-offset-2 ring-offset-background"
-														: "hover:ring-2 hover:ring-muted-foreground hover:ring-offset-2 hover:ring-offset-background",
-												)}
-												style={{ backgroundColor: option.colorValue ?? "#fff" }}
-												aria-label={option.value}
-												title={option.value}
-											>
-												{isLightColor && (
-													<span className="absolute inset-0 rounded-full border border-border" />
-												)}
-											</button>
-										);
-									})}
-								</div>
-							</>
-						) : (
-							<>
-								<div className="mb-3 flex items-center justify-between">
-									<legend className="text-sm font-medium">{group.label}</legend>
-								</div>
-								<div className="flex flex-wrap gap-3">
-									{group.options.map((option) => {
-										const isSelected = selectedOptions[group.label] === option.id;
-
-										return (
-											<button
-												key={option.id}
-												type="button"
-												onClick={() => handleOptionSelect(group.label, option.id)}
-												className={cn(
-													"flex flex-col items-center rounded-lg border-2 px-6 py-3 transition-all duration-200",
-													isSelected
-														? "border-foreground bg-foreground text-background"
-														: "border-border bg-background hover:border-muted-foreground",
-												)}
-											>
-												<span className="text-sm font-medium">{option.value}</span>
-											</button>
-										);
-									})}
-								</div>
-							</>
-						)}
-					</fieldset>
-				);
-			})}
+								>
+									<span className="text-sm font-medium">{option.value}</span>
+								</button>
+							);
+						})}
+					</div>
+				</fieldset>
+			))}
 		</div>
 	);
 }

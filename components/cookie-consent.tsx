@@ -7,7 +7,6 @@
 // ────────────────────────────────────────────────────────────────────────────
 import { cookies } from "next/headers";
 import { CookieConsentBanner } from "@/components/cookie-consent-banner";
-import { meGetCached } from "@/lib/commerce";
 
 // Must match CONSENT_COOKIE in ./cookie-consent-banner.tsx
 const CONSENT_COOKIE = "yns-cookie-consent";
@@ -21,12 +20,6 @@ const ConsentScript = ({ state }: { state: "denied" | "granted" }) => (
 );
 
 export async function CookieConsent() {
-	const me = await meGetCached();
-	if (!me.store.settings?.enabledTools?.cookieConsent) {
-		// Consent tool disabled in admin — tracking can fire freely.
-		return <ConsentScript state="granted" />;
-	}
-
 	const consent = (await cookies()).get(CONSENT_COOKIE)?.value;
 	return (
 		<>

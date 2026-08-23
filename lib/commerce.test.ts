@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 
-// lib/commerce asserts YNS_API_KEY at import time — stub it before the dynamic import.
-process.env.YNS_API_KEY ??= "test-key";
+// lib/commerce asserts NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY at import time — stub it before the dynamic import.
+process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ??= "pk_test";
 const { getCanonicalUrl } = await import("@/lib/commerce");
 
 const ENV_KEYS = ["NEXT_PUBLIC_URL", "VERCEL_PROJECT_PRODUCTION_URL", "VERCEL_URL"] as const;

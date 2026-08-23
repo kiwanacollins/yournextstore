@@ -17,7 +17,9 @@
 			"!**/vercel.json",
 			"!**/components/ui",
 			"!**/*.css",
-			"!**/*.svg"
+			"!**/*.svg",
+			"!medusa",
+			"!payload"
 		]
 	},
 	"css": {

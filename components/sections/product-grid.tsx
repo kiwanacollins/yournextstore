@@ -1,24 +1,15 @@
-import type {
-	APICollectionGetByIdResult,
-	APIProductGetByIdResult,
-	APIProductsBrowseResult,
-} from "commerce-kit";
 import { ArrowRight } from "lucide-react";
 import { cacheLife } from "next/cache";
 import Link from "next/link";
 import { ProductCard } from "@/components/product-card";
-import { commerce } from "@/lib/commerce";
+import { productBrowse } from "@/lib/commerce";
 
-export type Product = APIProductsBrowseResult["data"][number];
+export type Product = Awaited<ReturnType<typeof productBrowse>>["data"][number];
 
 type ProductGridProps = {
 	title?: string;
 	description?: string;
-	products?: (
-		| Product
-		| APICollectionGetByIdResult["productCollections"][number]["product"]
-		| NonNullable<APIProductGetByIdResult>
-	)[];
+	products?: Product[];
 	limit?: number;
 	showViewAll?: boolean;
 	viewAllHref?: string;
@@ -35,7 +26,7 @@ export async function ProductGrid({
 	"use cache";
 	cacheLife("minutes");
 
-	const displayProducts = products ?? (await commerce.productBrowse({ active: true, limit })).data;
+	const displayProducts = products ?? (await productBrowse({ limit })).data;
 
 	return (
 		<section id="products" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">

@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { getStoreFaviconUrl, meGetCached } from "@/lib/commerce";
+import { getStoreSeo } from "@/lib/commerce";
 
 export async function GET() {
-	const me = await meGetCached();
-	const storeName = me.store.name || "Your Next Store";
-	const faviconUrl = getStoreFaviconUrl(me.store.settings) ?? "/logo.svg";
+	const { storeName } = await getStoreSeo();
+	const faviconUrl = "/logo.svg";
 
 	const manifest = {
 		name: storeName,

@@ -3,7 +3,7 @@ import { cacheLife } from "next/cache";
 import { Suspense } from "react";
 import { ProductCard } from "@/components/product-card";
 import { SearchPageInput } from "@/components/search/search-page-input";
-import { commerce } from "@/lib/commerce";
+import { categoriesBrowse, categoryGet, productBrowse } from "@/lib/commerce";
 import { ActiveFilters, CategorySidebar, MobileControls, SortSelect } from "./search-controls";
 import { SearchPagination } from "./search-pagination";
 import { getSortFromParams, sortToBrowseParams } from "./sort";
@@ -27,20 +27,22 @@ export async function generateMetadata({
 async function getActiveCategories() {
 	"use cache";
 	cacheLife("hours");
-	const { data } = await commerce.categoriesBrowse({ active: true, limit: 50 });
-	return data.filter((c) => !c.parentId).map((c) => ({ id: c.id, slug: c.slug, name: c.name }));
+	const { data } = await categoriesBrowse({ limit: 50 });
+	return data
+		.filter((c) => !c.parent_category_id)
+		.map((c) => ({ id: c.id, slug: c.handle ?? c.id, name: c.name }));
 }
 
 async function getTotalCount({ q, category }: { q: string; category?: string }) {
 	"use cache";
 	cacheLife("minutes");
-	const { meta } = await commerce.productBrowse({
-		query: q.trim(),
-		active: true,
+	const resolvedCategory = category ? await categoryGet({ idOrSlug: category }) : null;
+	const { count } = await productBrowse({
+		q: q.trim(),
 		limit: 1,
-		...(category ? { category } : {}),
+		...(resolvedCategory ? { category_id: [resolvedCategory.id] } : {}),
 	});
-	return meta.count;
+	return count;
 }
 
 function SearchResultsSkeleton() {
@@ -74,17 +76,17 @@ async function SearchResults({
 	const currentPage = Math.max(1, Number(page) || 1);
 	const offset = (currentPage - 1) * PRODUCTS_PER_PAGE;
 	const sortParams = sortToBrowseParams(sort);
+	const resolvedCategory = category ? await categoryGet({ idOrSlug: category }) : null;
 
-	const result = await commerce.productBrowse({
-		query: q.trim(),
-		active: true,
+	const result = await productBrowse({
+		q: q.trim(),
 		limit: PRODUCTS_PER_PAGE,
 		offset,
 		...sortParams,
-		...(category ? { category } : {}),
+		...(resolvedCategory ? { category_id: [resolvedCategory.id] } : {}),
 	});
 
-	const totalPages = Math.ceil(result.meta.count / PRODUCTS_PER_PAGE);
+	const totalPages = Math.ceil(result.count / PRODUCTS_PER_PAGE);
 
 	if (result.data.length === 0) {
 		return (

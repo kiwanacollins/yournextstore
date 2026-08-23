@@ -4,7 +4,7 @@ import { cacheLife } from "next/cache";
 import { notFound } from "next/navigation";
 import { ImageResponse } from "next/og";
 import { try_ } from "safe-try";
-import { commerce, getStoreSeo } from "@/lib/commerce";
+import { getStoreSeo, productGet } from "@/lib/commerce";
 import { formatMoney } from "@/lib/money";
 import { getStoreConfig } from "@/lib/store-config";
 import { isVideoUrl } from "@/lib/utils";
@@ -20,7 +20,7 @@ export const alt = "";
 const productGetCached = async (slug: string) => {
 	"use cache";
 	cacheLife("minutes");
-	const [error, product] = await try_(commerce.productGet({ idOrSlug: slug }));
+	const [error, product] = await try_(productGet({ idOrSlug: slug }));
 	return error ? null : product;
 };
 
@@ -35,10 +35,13 @@ export default async function Image(props: { params: Promise<{ slug: string }> }
 
 	const { storeName } = await getStoreSeo();
 	const { currency, locale } = await getStoreConfig();
-	const image = product.images.find((url) => !isVideoUrl(url));
-	const minPrice = product.variants
-		.map((v) => BigInt(v.price))
-		.reduce<bigint | null>((min, price) => (min === null || price < min ? price : min), null);
+	const images = (product.images ?? []).map((img) => img.url);
+	const image = images.find((url) => !isVideoUrl(url)) ?? product.thumbnail ?? undefined;
+	const minPriceAmount = (product.variants ?? [])
+		.map((v) => v.calculated_price?.calculated_amount)
+		.filter((amount): amount is number => typeof amount === "number")
+		.reduce<number | null>((min, price) => (min === null || price < min ? price : min), null);
+	const minPrice = minPriceAmount !== null ? minPriceAmount : null;
 
 	return new ImageResponse(
 		<div
@@ -62,13 +65,13 @@ export default async function Image(props: { params: Promise<{ slug: string }> }
 			<div tw="flex-1 flex flex-col items-center justify-center border-l border-neutral-200">
 				<div tw="w-full mt-8 text-left px-16 font-normal text-4xl">{storeName}</div>
 				<div tw="flex-1 -mt-8 flex flex-col items-start justify-center px-16">
-					<p tw="font-black text-5xl mb-0">{product.name}</p>
+					<p tw="font-black text-5xl mb-0">{product.title}</p>
 					{minPrice !== null && (
 						<p tw="font-normal text-neutral-800 mt-0 text-3xl">
 							{formatMoney({ amount: minPrice, currency, locale })}
 						</p>
 					)}
-					<p tw="font-normal text-xl max-h-28">{product.summary || ""}</p>
+					<p tw="font-normal text-xl max-h-28">{product.description || ""}</p>
 				</div>
 			</div>
 		</div>,

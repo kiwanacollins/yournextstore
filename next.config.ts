@@ -2,9 +2,11 @@ import type { NextConfig } from "next";
 
 const isProd = process.env.NODE_ENV === "production";
 
+const medusaBackendUrl = new URL(process.env.MEDUSA_BACKEND_URL ?? "http://localhost:9000");
+
 const nextConfig: NextConfig = {
 	/* config options here */
-	allowedDevOrigins: ["*.vercel.run", "*.yns.store", "*.yns.cx"],
+	allowedDevOrigins: ["*.vercel.run"],
 	devIndicators: false,
 	reactCompiler: true,
 	cacheComponents: true,
@@ -33,14 +35,16 @@ const nextConfig: NextConfig = {
 		],
 	},
 	images: {
-		// Store media lives on Vercel Blob (per-store subdomain) and the YNS platform hosts.
+		// Product media lives on the self-hosted Medusa instance (local disk / S3, per
+		// MEDUSA_BACKEND_URL) plus Medusa's public demo-image bucket used by the seed data.
 		// A "**" wildcard would make the image optimizer an open proxy for any https URL.
 		remotePatterns: [
-			{ protocol: "https", hostname: "*.public.blob.vercel-storage.com" },
-			{ protocol: "https", hostname: "yns.store" },
-			{ protocol: "https", hostname: "**.yns.store" },
-			{ protocol: "https", hostname: "yns.cx" },
-			{ protocol: "https", hostname: "**.yns.cx" },
+			{
+				protocol: medusaBackendUrl.protocol.replace(":", "") as "http" | "https",
+				hostname: medusaBackendUrl.hostname,
+				port: medusaBackendUrl.port,
+			},
+			{ protocol: "https", hostname: "medusa-public-images.s3.eu-west-1.amazonaws.com" },
 		],
 	},
 	async headers() {

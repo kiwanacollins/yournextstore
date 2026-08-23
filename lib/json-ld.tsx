@@ -1,23 +1,8 @@
-import type {
-	APICollectionGetByIdResult,
-	APIProductGetByIdResult,
-	APIProductReviewsBrowseResult,
-} from "commerce-kit";
-import { getCanonicalUrl, meGetCached } from "@/lib/commerce";
+import { type collectionGet, getCanonicalUrl, getStoreSeo, type productGet } from "@/lib/commerce";
 import { CURRENCY } from "@/lib/constants";
 
-async function getCurrency(): Promise<string> {
-	try {
-		const me = await meGetCached();
-		return me.store.currency?.toUpperCase() || CURRENCY;
-	} catch {
-		return CURRENCY;
-	}
-}
-
-function getDecimalPrice(minorAmount: string): string {
-	return (Number(minorAmount) / 100).toFixed(2);
-}
+type ProductLike = NonNullable<Awaited<ReturnType<typeof productGet>>>;
+type CollectionLike = NonNullable<Awaited<ReturnType<typeof collectionGet>>>;
 
 function getBaseUrl(): string {
 	return getCanonicalUrl();
@@ -32,33 +17,35 @@ export function JsonLdScript({ data }: { data: Record<string, unknown> }) {
 	);
 }
 
-export async function buildProductJsonLd(
-	product: APIProductGetByIdResult,
-	reviews: APIProductReviewsBrowseResult | null,
-): Promise<Record<string, unknown>> {
-	const prices = product.variants.map((v) => Number(v.price));
-	const lowPrice = getDecimalPrice(String(Math.min(...prices)));
-	const highPrice = getDecimalPrice(String(Math.max(...prices)));
+export function buildProductJsonLd(product: ProductLike): Record<string, unknown> {
+	const variants = product.variants ?? [];
+	const prices = variants
+		.map((v) => v.calculated_price?.calculated_amount)
+		.filter((amount): amount is number => typeof amount === "number");
+	const lowPrice = prices.length > 0 ? Math.min(...prices).toFixed(2) : undefined;
+	const highPrice = prices.length > 0 ? Math.max(...prices).toFixed(2) : undefined;
 	const baseUrl = getBaseUrl();
-	const currency = await getCurrency();
+	const currency = (variants[0]?.calculated_price?.currency_code ?? CURRENCY).toUpperCase();
+	const images = (product.images ?? []).map((img) => img.url);
+	const firstVariant = variants[0];
 
-	const jsonLd: Record<string, unknown> = {
+	return {
 		"@context": "https://schema.org",
 		"@type": "Product",
-		name: product.name,
-		description: product.summary,
-		image: product.images,
-		sku: product.variants[0]?.sku ?? product.id,
-		brand: product.category ? { "@type": "Brand", name: product.category.name } : undefined,
+		name: product.title,
+		description: product.description,
+		image: images,
+		sku: firstVariant?.sku ?? product.id,
+		brand: product.categories?.[0] ? { "@type": "Brand", name: product.categories[0].name } : undefined,
 		offers:
-			product.variants.length === 1
+			variants.length === 1
 				? {
 						"@type": "Offer",
-						url: `${baseUrl}/product/${product.slug}`,
+						url: `${baseUrl}/product/${product.handle}`,
 						priceCurrency: currency,
 						price: lowPrice,
 						availability:
-							product.variants[0]?.stock === null || (product.variants[0]?.stock ?? 0) > 0
+							firstVariant?.inventory_quantity === undefined || (firstVariant?.inventory_quantity ?? 0) > 0
 								? "https://schema.org/InStock"
 								: "https://schema.org/OutOfStock",
 					}
@@ -67,53 +54,29 @@ export async function buildProductJsonLd(
 						lowPrice,
 						highPrice,
 						priceCurrency: currency,
-						offerCount: product.variants.length,
+						offerCount: variants.length,
 						availability: "https://schema.org/InStock",
 					},
 	};
-
-	if (reviews && reviews.summary.reviewCount > 0) {
-		jsonLd.aggregateRating = {
-			"@type": "AggregateRating",
-			ratingValue: reviews.summary.averageRating,
-			reviewCount: reviews.summary.reviewCount,
-			bestRating: 5,
-			worstRating: 1,
-		};
-
-		jsonLd.review = reviews.data.map((r) => ({
-			"@type": "Review",
-			author: { "@type": "Person", name: r.author },
-			datePublished: r.createdAt,
-			reviewRating: {
-				"@type": "Rating",
-				ratingValue: r.rating,
-				bestRating: 5,
-				worstRating: 1,
-			},
-			reviewBody: r.content,
-		}));
-	}
-
-	return jsonLd;
 }
 
-export function buildProductBreadcrumbJsonLd(product: APIProductGetByIdResult): Record<string, unknown> {
+export function buildProductBreadcrumbJsonLd(product: ProductLike): Record<string, unknown> {
 	const baseUrl = getBaseUrl();
+	const category = product.categories?.[0];
 	const items = [
 		{ "@type": "ListItem", position: 1, name: "Home", item: baseUrl || undefined },
-		product.category
+		category
 			? {
 					"@type": "ListItem",
 					position: 2,
-					name: product.category.name,
-					item: `${baseUrl}/collection/${product.category.slug}`,
+					name: category.name,
+					item: `${baseUrl}/category/${category.handle}`,
 				}
 			: null,
 		{
 			"@type": "ListItem",
-			position: product.category ? 3 : 2,
-			name: product.name,
+			position: category ? 3 : 2,
+			name: product.title,
 		},
 	].filter(Boolean);
 
@@ -124,29 +87,26 @@ export function buildProductBreadcrumbJsonLd(product: APIProductGetByIdResult): 
 	};
 }
 
-export function buildCollectionJsonLd(collection: APICollectionGetByIdResult): Record<string, unknown> {
+export function buildCollectionJsonLd(collection: CollectionLike): Record<string, unknown> {
 	const baseUrl = getBaseUrl();
+	const products = collection.products ?? [];
 
 	return {
 		"@context": "https://schema.org",
 		"@type": "CollectionPage",
-		name: collection.name,
-		description:
-			typeof collection.description === "string" ? collection.description : `${collection.name} collection`,
-		image: collection.image ?? undefined,
-		numberOfItems: collection.productCollections.length,
-		hasPart: collection.productCollections.map((pc) => ({
+		name: collection.title,
+		description: `${collection.title} collection`,
+		numberOfItems: products.length,
+		hasPart: products.map((product) => ({
 			"@type": "Product",
-			name: pc.product.name,
-			url: `${baseUrl}/product/${pc.product.slug}`,
-			image: pc.product.images[0],
+			name: product.title,
+			url: `${baseUrl}/product/${product.handle}`,
+			image: product.thumbnail ?? undefined,
 		})),
 	};
 }
 
-export function buildCollectionBreadcrumbJsonLd(
-	collection: APICollectionGetByIdResult,
-): Record<string, unknown> {
+export function buildCollectionBreadcrumbJsonLd(collection: CollectionLike): Record<string, unknown> {
 	const baseUrl = getBaseUrl();
 
 	return {
@@ -154,7 +114,7 @@ export function buildCollectionBreadcrumbJsonLd(
 		"@type": "BreadcrumbList",
 		itemListElement: [
 			{ "@type": "ListItem", position: 1, name: "Home", item: baseUrl || undefined },
-			{ "@type": "ListItem", position: 2, name: collection.name },
+			{ "@type": "ListItem", position: 2, name: collection.title },
 		],
 	};
 }
@@ -184,21 +144,14 @@ export function buildCategoryBreadcrumbJsonLd(
 }
 
 export async function StoreJsonLd() {
-	const me = await meGetCached();
-	const storeName = me.store.name || "Your Next Store";
-	const storeDescription = me.store.settings?.storeDescription || undefined;
+	const { storeName, storeDescription } = await getStoreSeo();
 	const baseUrl = getBaseUrl();
-	const ogImage = me.store.settings?.ogimage || undefined;
-	const logo =
-		typeof me.store.settings?.logo === "string" ? me.store.settings.logo : me.store.settings?.logo?.imageUrl;
 
 	const organization = {
 		"@context": "https://schema.org",
 		"@type": "Organization",
 		name: storeName,
 		url: baseUrl,
-		...(logo ? { logo } : {}),
-		...(ogImage ? { image: ogImage } : {}),
 	};
 
 	const website = {
@@ -206,7 +159,7 @@ export async function StoreJsonLd() {
 		"@type": "WebSite",
 		name: storeName,
 		url: baseUrl,
-		description: storeDescription,
+		description: storeDescription ?? undefined,
 		potentialAction: {
 			"@type": "SearchAction",
 			target: {
@@ -221,9 +174,8 @@ export async function StoreJsonLd() {
 		"@context": "https://schema.org",
 		"@type": "Store",
 		name: storeName,
-		description: storeDescription,
+		description: storeDescription ?? undefined,
 		url: baseUrl,
-		...(ogImage ? { image: ogImage } : {}),
 	};
 
 	return (

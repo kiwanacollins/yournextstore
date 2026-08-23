@@ -1,87 +1,59 @@
-import type {
-	APICollectionGetByIdResult,
-	APIProductGetByIdResult,
-	APIProductsBrowseResult,
-} from "commerce-kit";
 import Link from "next/link";
+import type { productBrowse } from "@/lib/commerce";
 import { formatMoney } from "@/lib/money";
 import { getStoreConfig } from "@/lib/store-config";
 import { isVideoUrl } from "@/lib/utils";
 import { YNSMedia } from "@/lib/yns-media";
 import { QuickAddButton } from "./quick-add-button";
 
-type BrowseProduct = APIProductsBrowseResult["data"][number];
-type CollectionProduct = APICollectionGetByIdResult["productCollections"][number]["product"];
-type FullProduct = NonNullable<APIProductGetByIdResult>;
+type CardProduct = Awaited<ReturnType<typeof productBrowse>>["data"][number];
 
 export async function ProductCard({
 	product,
 	priority = false,
 }: {
-	product: BrowseProduct | CollectionProduct | FullProduct;
+	product: CardProduct;
 	priority?: boolean;
 }) {
 	const { currency, locale } = await getStoreConfig();
-	const variants = "variants" in product ? product.variants : null;
-	const firstVariantPrice = variants?.[0] ? BigInt(variants[0].price) : null;
-	const { minPrice, maxPrice } =
-		variants && firstVariantPrice !== null
-			? variants.reduce(
-					(acc, v) => {
-						const price = BigInt(v.price);
-						return {
-							minPrice: price < acc.minPrice ? price : acc.minPrice,
-							maxPrice: price > acc.maxPrice ? price : acc.maxPrice,
-						};
-					},
-					{ minPrice: firstVariantPrice, maxPrice: firstVariantPrice },
-				)
-			: { minPrice: null, maxPrice: null };
+	const variants = product.variants ?? null;
+	// Medusa's calculated_price is in MAJOR units (e.g. 19.99, not 1999), while formatMoney
+	// expects minor units. This is a no-op for UGX (0 decimal places) but will misformat any
+	// non-zero-decimal currency — flagged for the dedicated pricing verification pass.
+	const variantAmounts = (variants ?? [])
+		.map((v) => v.calculated_price?.calculated_amount)
+		.filter((amount): amount is number => typeof amount === "number");
+	const minPrice = variantAmounts.length > 0 ? Math.min(...variantAmounts) : null;
+	const maxPrice = variantAmounts.length > 0 ? Math.max(...variantAmounts) : null;
 
 	const priceDisplay =
-		variants && variants.length > 1 && minPrice && maxPrice && minPrice !== maxPrice
+		variants && variants.length > 1 && minPrice !== null && maxPrice !== null && minPrice !== maxPrice
 			? `${formatMoney({ amount: minPrice, currency, locale })} - ${formatMoney({ amount: maxPrice, currency, locale })}`
-			: minPrice
+			: minPrice !== null
 				? formatMoney({ amount: minPrice, currency, locale })
 				: null;
 
-	const allImages = [
-		...(product.images ?? []),
-		...(variants?.flatMap((v) => v.images ?? []).filter((img) => !(product.images ?? []).includes(img)) ??
-			[]),
-	];
-	const primaryImage = allImages[0];
+	const allImages = (product.images ?? []).map((img) => img.url);
+	const primaryImage = allImages[0] ?? product.thumbnail ?? undefined;
 	const secondaryImage = allImages[1];
 
-	const singleVariant = variants?.length === 1 && variants[0]?.stock !== 0 ? variants[0] : null;
-
-	// A single-variant card deep-links to that variant; a bare link would show the product's default.
-	const onlyVariant = variants?.length === 1 ? variants[0] : null;
-	const variantSearch = (() => {
-		if (!onlyVariant || !("combinations" in onlyVariant) || onlyVariant.combinations.length === 0) {
-			return "";
-		}
-		const params = new URLSearchParams();
-		for (const combination of onlyVariant.combinations) {
-			params.set(combination.variantValue.variantType.label, combination.variantValue.value);
-		}
-		return `?${params.toString()}`;
-	})();
+	const singleVariant =
+		variants?.length === 1 && (variants[0]?.inventory_quantity ?? 1) !== 0 ? variants[0] : null;
 
 	return (
-		<Link href={`/product/${product.slug}${variantSearch}`} className="group">
+		<Link href={`/product/${product.handle}`} className="group">
 			<div className="relative aspect-square bg-secondary rounded-2xl overflow-hidden mb-4">
 				{singleVariant && (
 					<QuickAddButton
 						variantId={singleVariant.id}
-						variantSku={"sku" in singleVariant ? singleVariant.sku : null}
-						variantPrice={singleVariant.price}
-						variantImages={singleVariant.images}
+						variantSku={singleVariant.sku ?? null}
+						variantPrice={String(singleVariant.calculated_price?.calculated_amount ?? 0)}
+						variantImages={allImages}
 						product={{
 							id: product.id,
-							name: product.name,
-							slug: product.slug,
-							images: product.images ?? [],
+							name: product.title,
+							slug: product.handle ?? product.id,
+							images: allImages,
 						}}
 					/>
 				)}
@@ -98,7 +70,7 @@ export async function ProductCard({
 					) : (
 						<YNSMedia
 							src={primaryImage}
-							alt={product.name}
+							alt={product.title}
 							fill
 							sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
 							className={`object-cover transition-opacity duration-500 ${secondaryImage ? "group-hover:opacity-0" : ""}`}
@@ -118,7 +90,7 @@ export async function ProductCard({
 					) : (
 						<YNSMedia
 							src={secondaryImage}
-							alt={`${product.name} - alternate view`}
+							alt={`${product.title} - alternate view`}
 							fill
 							sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
 							className="object-cover opacity-0 transition-opacity duration-500 group-hover:opacity-100"
@@ -126,7 +98,7 @@ export async function ProductCard({
 					))}
 			</div>
 			<div className="space-y-1">
-				<h3 className="text-base font-medium text-foreground">{product.name}</h3>
+				<h3 className="text-base font-medium text-foreground">{product.title}</h3>
 				<p className="text-base font-semibold text-foreground">{priceDisplay}</p>
 			</div>
 		</Link>
