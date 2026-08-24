@@ -1,0 +1,4 @@
+[test]
+# medusa/ and payload/ are separate projects with their own test runners
+# (vitest/playwright) — bun test must not pick up their spec files.
+pathIgnorePatterns = ["medusa/**", "payload/**"]
