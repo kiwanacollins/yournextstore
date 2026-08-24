@@ -5,8 +5,8 @@ export const ContactMessages: CollectionConfig = {
   admin: {
     useAsTitle: 'email',
     defaultColumns: ['email', 'subject', 'receivedAt', 'status'],
-    defaultSort: '-receivedAt',
   },
+  defaultSort: '-receivedAt',
   access: {
     read: ({ req }) => Boolean(req.user),
     create: () => true,

@@ -5,8 +5,8 @@ export const NewsletterSubscribers: CollectionConfig = {
   admin: {
     useAsTitle: 'email',
     defaultColumns: ['email', 'subscribedAt'],
-    defaultSort: '-subscribedAt',
   },
+  defaultSort: '-subscribedAt',
   access: {
     read: ({ req }) => Boolean(req.user),
     create: () => true,

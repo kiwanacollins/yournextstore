@@ -5,8 +5,8 @@ export const Reviews: CollectionConfig = {
   admin: {
     useAsTitle: 'authorName',
     defaultColumns: ['productId', 'rating', 'status', 'createdAt'],
-    defaultSort: '-createdAt',
   },
+  defaultSort: '-createdAt',
   access: {
     // Shoppers only ever see approved reviews; the storefront always filters
     // by status=approved too, but this is the backstop against a missed filter.

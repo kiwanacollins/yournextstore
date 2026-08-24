@@ -7,6 +7,9 @@ services:
       POSTGRES_DB: medusa
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # postgres only auto-creates POSTGRES_DB on first init — payload gets its own
+      # database in the same server, created by this script on that first boot.
+      - ./scripts/init-payload-db.sql:/docker-entrypoint-initdb.d/init-payload-db.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -42,6 +45,19 @@ services:
         condition: service_healthy
     ports:
       - "9000:9000"
+
+  payload:
+    build:
+      context: ./payload
+      dockerfile: Dockerfile.dev
+    env_file: ./payload/.env
+    environment:
+      DATABASE_URL: postgres://medusa:medusa@postgres:5432/payload
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "3002:3002"
 
 volumes:
   postgres_data:
