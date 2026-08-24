@@ -1,61 +1,86 @@
 # AGENTS.md
 
-Your Next Store — e-commerce app built with Next.js App Router + Commerce Kit SDK.
+Your Next Store — e-commerce app built with Next.js App Router, backed by a self-hosted Medusa
+commerce server. There is no third-party commerce platform: products, cart, checkout, orders,
+and customer auth are all served by the local Medusa instance in `medusa/`.
 
 ## Commands
 
 ```bash
-bun dev           # Dev server (port 3000)
+bun dev           # Next.js dev server (port 3000; falls back to the next free port if taken)
+bun run dev:all   # docker compose up -d (Postgres + Redis + Medusa) then bun dev — the common case
 bun run build     # Production build
 bun start         # Production server
 bun run lint      # Biome lint (--write to auto-fix)
 bun run format    # Biome format
 bun test          # Run tests (bun:test)
-tsc --noEmit     # Type check
+tsc --noEmit      # Type check
 bun run check     # Everything but the build: biome check + tsc --noEmit + bun test
-bun run publish:store                 # Production publish (CLI twin of the admin "Publish" button; deploys remote main)
-bun run api <METHOD> <path> [json]    # Call any Store API endpoint with the store key, e.g. bun run api GET /me
 ```
+
+Medusa itself lives in `medusa/apps/backend` (its own package.json, own `npm run dev`, own admin
+UI at `http://localhost:9000/app`). `bun dev` alone is not enough — Medusa must be reachable at
+`MEDUSA_BACKEND_URL` or every commerce call fails. First-time setup, after `docker compose up -d
+postgres redis`: `cd medusa/apps/backend && npx medusa db:migrate` and create an admin user with
+`npx medusa user -e you@example.com -p <password>`.
 
 ## Key Files & Directories
 
 ```
 app/                  # Pages, layouts, actions (App Router)
 components/ui/        # Shadcn UI components (add more with: bunx shadcn add <name>)
-lib/commerce.ts       # Commerce API client
+lib/commerce.ts       # Medusa Store API client (products, cart, checkout, customer auth)
+lib/session.ts        # Reads the signed-in customer from the auth cookie
 lib/money.ts          # Currency formatting (formatMoney)
 lib/utils.ts          # Utilities
-scripts/              # CLI helpers: api.sh (generic Store API caller), publish.sh (production publish + wait)
-biome.json            # Lint/format config
+medusa/apps/backend/  # Self-hosted Medusa server — own package.json, own admin UI, own migrations
+docker-compose.yml    # Postgres + Redis + Medusa, mirrors the VPS topology
+biome.json            # Lint/format config (excludes medusa/ — it has its own lint setup)
+tsconfig.json         # Type-check config (excludes medusa/ — it has its own tsconfig)
 next.config.ts        # Next.js config
 ```
 
-## Platform-managed files — DO NOT MODIFY
-
-`instrumentation-client.ts`, `lib/track.tsx`, and `proxy.ts` carry the platform integration
-(analytics kit injection, the `track()` event contract, the `/_public` + `/checkout` proxies).
-They are updated by platform releases only — the platform's tooling **rejects edits to
-them, and any out-of-band change is restored to the platform version on every save**. Trackers, consent handling, and event forwarding live in
-a platform-served script (`/_public/kit.js`, generated per store), so **never** add tracker
-snippets (fbq, gtag, GTM, pixels) to template code. To track a commerce event from new UI,
-call `track()` from `lib/track.tsx`.
-
 ## Project Patterns
 
-- Use `safe-try` for error handling: `const [error, result] = await safe(...)`
+- Use `safe-try` for error handling: `const [error, result] = await try_(...)`
 - Format prices with `formatMoney` from `lib/money.ts`
 - Use functional array methods (`map`, `filter`, `reduce`), not loops
 - No `any` types; rely on type inference; minimal return type annotations
 - **Always quote paths** with special characters in shell commands: `rg "term" "app/(auth)/login"`
-- **ALL `/checkout` and `/account` links MUST be plain `<a>` tags.** Never use `<Link>` (or any link wrapper) for links into a proxied zone (`/checkout`, `/account`) — a soft RSC navigation into the cross-zone rewrite 500s.
+- `/checkout` and `/account` are ordinary same-origin routes — use `<Link>` normally, no special
+  handling needed (they used to be proxied to a hosted platform; that's gone).
 
 ## Shopper auth
 
-There is **no auth in this app**. Shopper sign-in happens exclusively through the platform's unified account system: inline email-code sign-in inside the proxied `/checkout`, and the platform-rendered account area behind the proxied `/account` (see `proxy.ts`). Never add `/login` or `/signup` pages, auth forms, or session handling here — the only local piece is `app/api/auth/[...all]/route.ts`, a passthrough that forwards the platform components' client-side `/api/auth/*` calls (e.g. sign-out in the account area) to the apex backend.
+Customer accounts are backed by **Medusa's built-in email/password auth**, not a third-party
+platform. `/account/register` and `/account/login` are real local pages backed by Server Actions
+in `app/account/actions.ts` (`signUp`, `signIn`, `signOut`), which call `medusa.auth.register` /
+`medusa.auth.login` and store the resulting session token in an httpOnly cookie (`yns_auth`, see
+`lib/cookies.ts`). `lib/session.ts`'s `getCurrentCustomer()` reads that cookie and resolves the
+customer server-side — use it to gate any page or check that needs to know who's signed in.
+
+The Medusa SDK client in `lib/commerce.ts` is configured with `jwtTokenStorageMethod: "nostore"`:
+Server Components/Actions have no persistent client-side storage, so every authenticated call
+(`orderList`, `customerGet`, etc.) must be passed the token explicitly via `authHeaders(token)`.
+
+## Checkout
+
+`app/checkout/` is a single-page, step-based flow (address → shipping → review/pay) backed by
+Server Actions in `app/checkout/actions.ts`, calling Medusa's Store API directly: `cart.update`
+(email + addresses) → `fulfillment.listCartOptions` + `cart.addShippingMethod` →
+`payment.initiatePaymentSession` (currently the manual `pp_system_default` provider — swap to a
+real provider like Stripe by changing the `provider_id` and enabling it on the region, no flow
+change needed) → `cart.complete`. `cart.complete`'s response is a discriminated union
+(`type: "order"` vs `type: "cart"` with an `error`) — branch on `result.type`, don't assume
+success.
+
+After a successful order, call the cart context's `clearCart()` (see `app/cart/cart-context.tsx`)
+before navigating away — the cart cookie is cleared server-side by `placeOrder`, but the client's
+in-memory cart state needs to be told explicitly or it keeps showing the just-completed cart.
 
 ## The prerendered shell
 
-`cacheComponents` is on. Everything the root layout awaits before rendering the chrome ends up in the prerendered shell; anything request-time (`cookies()`, `headers()`, `searchParams`) takes it back out. So `app/layout.tsx` awaits **only cached reads**, and the one per-customer read — the cart cookie — sits in `CartBootstrapper`, inside its own Suspense boundary *below* the header and footer.
+`cacheComponents` is on. Everything the root layout awaits before rendering the chrome ends up in the prerendered shell; anything request-time (`cookies()`, `headers()`, `searchParams`) takes it back out. So `app/layout.tsx` awaits **only cached reads**, and the two per-customer reads — the cart cookie and (on `/account`) the auth cookie — stay inside their own Suspense boundaries *below* the header and footer, never awaited directly in the layout.
 
 Do not hoist a request-time read above the chrome. The layout's Suspense boundaries have no fallback, so the cost is not a spinner: the shell prerenders empty and the page paints blank white until the server responds. That stays invisible during soft navigation (the old UI remains on screen) and is glaring on any full document load.
 
@@ -63,23 +88,6 @@ Check it after touching the layout — the header must be in the prerendered HTM
 
 ```bash
 bun run build && grep -c '<header' .next/server/app/index.html   # must be ≥ 1
-```
-
-## Adding locales
-
-The storefront ships single-locale. If you add locales, put **every** locale behind a real route segment (`app/[locale]/…`) and map the unprefixed default-locale URLs onto it. That mapping is split, and the split is not stylistic:
-
-| URL | Where | Why |
-|---|---|---|
-| `/` | `proxy.ts` | a `rewrites()` entry whose `source` is the bare `"/"` gets no RSC twin |
-| `/:path*` | `next.config.ts` `afterFiles` | proxy runs *before* the public directory and would swallow `/logo.svg` |
-
-A bare-`"/"` rewrite makes the router's flight request for the root (`/?_rsc=…`, `RSC: 1`) resolve to the HTML route and return `text/html`. Next soft-navigates only on `text/x-component`, so every in-app navigation to `/` — the header logo, the locale switcher back to the default language — degrades to a full document load. Path rewrites are unaffected because the `.rsc` suffix rides along inside the param, which is why this breaks exactly one URL and reads like a rendering bug rather than a routing one. `proxy.ts` sees the real request, RSC header included, so `NextResponse.rewrite` keeps the response a flight payload.
-
-The reverse pull is just as real: proxy is step 3 of the routing order and the `public/` directory is step 5, so a broad proxy matcher rewrites static assets into the locale segment and 404s them. Keep the proxy matcher on `"/"`.
-
-```bash
-curl -sI -H 'RSC: 1' https://<store>/ | grep content-type   # must be text/x-component
 ```
 
 ## Biome Rules
@@ -90,30 +98,46 @@ Default export exceptions (Biome-allowed): `page.tsx`, `layout.tsx`, `loading.ts
 
 Prefer: named exports, `map`/`filter`/`reduce`, type inference, `as const`, template literals.
 
-## Commerce Kit SDK
+`medusa/` is excluded from the root Biome/tsconfig — it's a separate project with its own lint
+and type-check setup (Medusa's scaffolder generates its own `eslint.config.ts`/`tsconfig.json`).
+Run its checks from inside `medusa/apps/backend` if you touch files there.
+
+## Medusa Store API
+
+`lib/commerce.ts` wraps `@medusajs/js-sdk` (`medusa.store.*`). Every browse/get call resolves the
+store's single region first (`getDefaultRegionId()`, memoized) since Medusa prices and carts are
+region-scoped — there's no implicit "default" the way a single-tenant store might assume.
 
 ```tsx
 // Product browsing
-const products = await commerce.productBrowse({
-  active: true, limit: 12, offset: 0,
-  // search: "query", category: "id", tags: ["tag"]
-});
+const { data: products } = await productBrowse({ limit: 12, offset: 0, q: "query" });
 
-// Product details (accepts ID or slug)
-const product = await commerce.productGet({ idOrSlug: productId });
-// product.variants[].{id, price (minor units string), stock, images, attributes}
+// Product details (accepts a Medusa product id or a handle/slug)
+const product = await productGet({ idOrSlug: "t-shirt" });
+// product.variants[].calculated_price.calculated_amount — a number in the region's currency,
+// NOT a minor-units string. Zero-decimal currencies (this store uses UGX) have no cents to divide.
 
 // Cart
-const cart = await commerce.cartUpsert({ cartId, variantId: "v-123", quantity: 1 });
-const cart = await commerce.cartGet({ cartId });
+const cart = await cartUpsert({ cartId, variantId: "variant_123", quantity: 1 });
+const cart = await cartGet({ cartId }); // returns Medusa's raw StoreCart
+
+// The cart-UI layer (cart-context.tsx, cart-sidebar.tsx, cart-item.tsx) doesn't consume the raw
+// StoreCart directly — app/cart/cart-math.ts's mapStoreCart() narrows it to a flat
+// { id, items: [{ id, quantity, unit_price, variant_id, product_handle, product_title, thumbnail }] }
+// shape first. Extend mapStoreCart if the cart UI needs another field, rather than reaching into
+// the raw Medusa response from a component.
 ```
+
+Medusa has no "bundle" primitive and no facets/filters endpoint — `productFilters()` derives
+available categories/collections from `categoriesBrowse`/`collectionBrowse` instead; price-bounds
+and variant-option faceting aren't implemented.
 
 ## Code Examples
 
 ### Page with caching
 ```tsx
 // app/search/page.tsx
-import { commerce } from "@/lib/commerce";
+import { productBrowse } from "@/lib/commerce";
 import { SearchResults } from "./search-results";
 
 export default async function SearchPage({
@@ -124,7 +148,7 @@ export default async function SearchPage({
   "use cache";
   const { q } = await searchParams;
   const products = q
-    ? await commerce.productBrowse({ search: q, active: true })
+    ? await productBrowse({ q, limit: 24 })
     : { data: [] };
   return <SearchResults products={products.data} query={q} />;
 }
@@ -132,20 +156,18 @@ export default async function SearchPage({
 
 ### Error handling
 ```tsx
-import { commerce } from "@/lib/commerce";
+import { productGet } from "@/lib/commerce";
 import { formatMoney } from "@/lib/money";
-import { safe } from "safe-try";
+import { try_ } from "safe-try";
 
-const [error, result] = await safe(
-  commerce.productGet({ idOrSlug: productId })
-);
-if (error || !result) {
+const [error, product] = await try_(productGet({ idOrSlug: productId }));
+if (error || !product) {
   return <div>Product not found</div>;
 }
 const price = formatMoney({
-  amount: result.variants[0].price,
-  currency: "USD",
-  locale: "en-US",
+  amount: product.variants[0]?.calculated_price?.calculated_amount ?? 0,
+  currency: "UGX",
+  locale: "en-UG",
 });
 ```
 
@@ -154,9 +176,9 @@ const price = formatMoney({
 import { test, expect } from "bun:test";
 import { formatMoney } from "@/lib/money";
 
-test("formatMoney handles USD correctly", () => {
-  const result = formatMoney({ amount: "1999", currency: "USD", locale: "en-US" });
-  expect(result).toBe("$19.99");
+test("formatMoney handles a zero-decimal currency correctly", () => {
+  const result = formatMoney({ amount: 37000, currency: "UGX", locale: "en-UG" });
+  expect(result).toBe("USh 37,000");
 });
 ```
 
@@ -166,8 +188,8 @@ There is no GitHub Actions workflow — the husky `pre-commit` hook is the only 
 runs `lint-staged`: Biome over the staged files, then `bun tsc --noEmit` and `bun test` whenever a
 `.ts`/`.tsx` file is staged. `bun run check` runs the same three by hand.
 
-`bun run build` stays out of both, because prerendering reads live store data through `YNS_API_KEY`.
-Run it yourself before publishing.
+`bun run build` stays out of both, because prerendering reads live data from the local Medusa
+instance — it must be running (`bun run dev:all`) before you build.
 
 ## Validation Checklist
 
@@ -175,32 +197,30 @@ Run it yourself before publishing.
 - [ ] `bun run lint` — no lint errors
 - [ ] `bun run format` — code formatted
 - [ ] `bun test` — tests pass
-- [ ] `bun run build` — build succeeds
-- [ ] `bun dev` — runs without errors, feature works in browser
+- [ ] `bun run build` — build succeeds (Medusa must be running)
+- [ ] `bun run dev:all` — runs without errors, feature works in browser
 - [ ] No console errors, images load, responsive layout
-- [ ] No hardcoded secrets; env vars set (`.env.local` / Vercel dashboard)
+- [ ] No hardcoded secrets; env vars set (`.env.local`, `medusa/apps/backend/.env`)
 
-Required env: `YNS_API_KEY`
+Required env: `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` (see `.env.example`).
 
 ## Troubleshooting
 
 | Error | Cause | Fix |
 |-------|-------|-----|
 | `Cannot read property 'variants' of undefined` | Product data missing | Use optional chaining (`product?.variants`) |
-| `Missing env.YNS_API_KEY` | Env not loaded | Create `.env.local`, restart dev server |
+| `Missing env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` | Env not loaded | Create `.env.local` from `.env.example`, restart dev server |
+| `Method calculatePrices requires currency_code in the pricing context` | A Medusa field expansion (e.g. `*items.variant.calculated_price`) needs pricing context that wasn't supplied | Drop the expansion if the value isn't actually used, or pass `region_id`/currency context |
+| `ECONNREFUSED` on any commerce call | Medusa isn't running / Docker containers are down | `docker compose up -d postgres redis`, then `cd medusa/apps/backend && npm run dev` |
 | `noDefaultExport` | Default export in non-special file | Use named export |
 | `BigInt literal syntax` | Using `0n` with ES2020 | Use `BigInt(0)` |
 
 ## Agent Workflow Notes
 
-- **Explore agent**: Start with `lib/commerce.ts`, `app/layout.tsx`, `app/page.tsx`. Search `"use server"`/`"use cache"` for patterns.
+- **Explore agent**: Start with `lib/commerce.ts`, `app/layout.tsx`, `app/page.tsx`, `medusa/apps/backend/medusa-config.ts`. Search `"use server"`/`"use cache"` for patterns.
 - **Plan agent**: Check existing code first. Map to: routes (`app/`), API (`lib/commerce.ts`), UI (`components/ui/`), actions (`actions.ts`). Consider caching and server vs client components.
 - **Implementation agent**: Validate with commands above before and after changes. Follow Biome rules, reuse existing UI components.
 - **Frontend design**: Use `frontend-design:frontend-design` skill to achieve a distinctive, production-grade frontend experiences.
-
-**When starting work on the project, ALWAYS call the `init` tool from `next-devtools-mcp` FIRST to set up proper context and establish documentation requirements. Do this automatically without being asked.**
-
-<!-- YNS-DOCS-START -->[YNS Docs]|base: https://yournextstore.com/docs/{section}/{slug}|Fetch with `Accept: text/markdown` header for raw markdown (token-efficient). YNS docs are the single source of truth hosted at yournextstore.com.|getting-started:{introduction,quick-start,first-store-setup}|storefront:{overview,installation,configuration,customization,deployment}|commerce-sdk:{overview,authentication,products,cart,orders,collections}|api-reference:{overview,products,variants,bundles,collections,categories,brands,inventory,search,reviews,orders,carts,customers,coupons,promotions,subscription-plans,loyalty,shipping,tax-rates,pickup-locations,events,tickets,posts,blog-categories,post-comments,subscribers,newsletters,contact-messages,media,images,brand-kit,socials,analytics,settings,team,domain,legal-pages,feedback-sessions}<!-- YNS-DOCS-END -->
 
 <!-- BEGIN:nextjs-agent-rules -->
 
