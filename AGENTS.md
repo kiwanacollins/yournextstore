@@ -1,14 +1,15 @@
 # AGENTS.md
 
-Your Next Store — e-commerce app built with Next.js App Router, backed by a self-hosted Medusa
-commerce server. There is no third-party commerce platform: products, cart, checkout, orders,
-and customer auth are all served by the local Medusa instance in `medusa/`.
+Your Next Store — e-commerce app built with Next.js App Router, backed by two self-hosted
+services: Medusa for commerce (products, cart, checkout, orders, customer auth) and Payload CMS
+for content (blog, legal pages, product reviews, newsletter, contact). There is no third-party
+platform — both live in this repo, `medusa/` and `payload/`.
 
 ## Commands
 
 ```bash
 bun dev           # Next.js dev server (port 3000; falls back to the next free port if taken)
-bun run dev:all   # docker compose up -d (Postgres + Redis + Medusa) then bun dev — the common case
+bun run dev:all   # docker compose up -d (Postgres + Redis + Medusa + Payload) then bun dev — the common case
 bun run build     # Production build
 bun start         # Production server
 bun run lint      # Biome lint (--write to auto-fix)
@@ -18,26 +19,40 @@ tsc --noEmit      # Type check
 bun run check     # Everything but the build: biome check + tsc --noEmit + bun test
 ```
 
-Medusa itself lives in `medusa/apps/backend` (its own package.json, own `npm run dev`, own admin
-UI at `http://localhost:9000/app`). `bun dev` alone is not enough — Medusa must be reachable at
-`MEDUSA_BACKEND_URL` or every commerce call fails. First-time setup, after `docker compose up -d
-postgres redis`: `cd medusa/apps/backend && npx medusa db:migrate` and create an admin user with
-`npx medusa user -e you@example.com -p <password>`.
+Medusa lives in `medusa/apps/backend` (own package.json, own `npm run dev`, own admin UI at
+`http://localhost:9000/app`). Payload lives in `payload/` (own package.json, own `npm run dev`,
+own admin UI at `http://localhost:3002/admin`). `bun dev` alone is not enough — both must be
+reachable (`MEDUSA_BACKEND_URL`, `PAYLOAD_URL`) or the calls that depend on them fail. Use
+`bun run dev:all` to bring up the whole stack via Docker; it's what `docker-compose.yml` mirrors
+for the eventual VPS deploy.
+
+First-time setup:
+- Medusa: after `docker compose up -d postgres redis`, `cd medusa/apps/backend && npx medusa
+  db:migrate`, then create an admin user with `npx medusa user -e you@example.com -p <password>`.
+- Payload: its Postgres database (`payload`, separate from Medusa's `medusa` database on the same
+  server) is created automatically by `scripts/init-payload-db.sql` on Postgres's first boot.
+  Visit `http://localhost:3002/admin` once — Payload's first-run screen creates the initial admin
+  user itself, no separate CLI step needed.
 
 ## Key Files & Directories
 
 ```
-app/                  # Pages, layouts, actions (App Router)
-components/ui/        # Shadcn UI components (add more with: bunx shadcn add <name>)
-lib/commerce.ts       # Medusa Store API client (products, cart, checkout, customer auth)
-lib/session.ts        # Reads the signed-in customer from the auth cookie
-lib/money.ts          # Currency formatting (formatMoney)
-lib/utils.ts          # Utilities
-medusa/apps/backend/  # Self-hosted Medusa server — own package.json, own admin UI, own migrations
-docker-compose.yml    # Postgres + Redis + Medusa, mirrors the VPS topology
-biome.json            # Lint/format config (excludes medusa/ — it has its own lint setup)
-tsconfig.json         # Type-check config (excludes medusa/ — it has its own tsconfig)
-next.config.ts        # Next.js config
+app/                          # Pages, layouts, actions (App Router)
+components/ui/                # Shadcn UI components (add more with: bunx shadcn add <name>)
+components/lexical-renderer.tsx  # Dependency-free renderer for Payload's Lexical rich text
+lib/commerce.ts               # Medusa Store API client (products, cart, checkout, customer auth)
+lib/payload.ts                # Payload REST client (posts, legal pages, reviews, newsletter, contact)
+lib/session.ts                # Reads the signed-in customer from the auth cookie
+lib/money.ts                  # Currency formatting (formatMoney)
+lib/utils.ts                  # Utilities
+medusa/apps/backend/          # Self-hosted Medusa server — own package.json, own admin UI, own migrations
+payload/                      # Self-hosted Payload CMS — own package.json, own admin UI, own Next.js app
+docker-compose.yml            # Postgres + Redis + Medusa + Payload, mirrors the VPS topology
+scripts/init-payload-db.sql   # Creates Payload's separate Postgres database on first container boot
+biome.json                    # Lint/format config (excludes medusa/ and payload/ — each has its own setup)
+tsconfig.json                 # Type-check config (excludes medusa/ and payload/ — each has its own tsconfig)
+bunfig.toml                   # Scopes `bun test` to the root project — medusa/ and payload/ use vitest/playwright
+next.config.ts                # Next.js config
 ```
 
 ## Project Patterns
@@ -98,9 +113,12 @@ Default export exceptions (Biome-allowed): `page.tsx`, `layout.tsx`, `loading.ts
 
 Prefer: named exports, `map`/`filter`/`reduce`, type inference, `as const`, template literals.
 
-`medusa/` is excluded from the root Biome/tsconfig — it's a separate project with its own lint
-and type-check setup (Medusa's scaffolder generates its own `eslint.config.ts`/`tsconfig.json`).
-Run its checks from inside `medusa/apps/backend` if you touch files there.
+`medusa/` and `payload/` are excluded from the root Biome/tsconfig/bunfig — each is a separate
+project with its own lint, type-check, and test setup (both scaffolders generate their own
+`eslint.config.ts`/`tsconfig.json`; Payload also brings vitest and Playwright). Run their checks
+from inside `medusa/apps/backend` or `payload/` respectively if you touch files there — and if
+you `cd` into either for a fix, `cd` back before running the root project's checks, or you'll get
+false failures from the wrong project's config.
 
 ## Medusa Store API
 
@@ -131,6 +149,46 @@ const cart = await cartGet({ cartId }); // returns Medusa's raw StoreCart
 Medusa has no "bundle" primitive and no facets/filters endpoint — `productFilters()` derives
 available categories/collections from `categoriesBrowse`/`collectionBrowse` instead; price-bounds
 and variant-option faceting aren't implemented.
+
+## Payload CMS
+
+`lib/payload.ts` wraps Payload's REST API (`fetch` against `PAYLOAD_URL/api/<collection>`, cached
+via `next: { revalidate: 60 }`) — there's no SDK client the way Medusa has one. Collections live in
+`payload/src/collections/`, one file each: `Posts`, `LegalPages`, `Reviews`,
+`NewsletterSubscribers`, `ContactMessages`, `RestockNotifications` (collection created, no
+storefront UI yet). `SiteSettings` (`payload/src/globals/SiteSettings.ts`) is a global, not a
+collection — singleton config (store name/description, favicon, and `showBlogLink`/
+`showContactLink` toggles the footer reads to decide whether to link `/blog` and `/contact`).
+
+Rich text fields use Payload's default Lexical editor, stored as JSON. `components/
+lexical-renderer.tsx` is a small hand-written renderer (paragraphs, headings, lists, links, basic
+formatting) — deliberately not `@payloadcms/richtext-lexical`'s own React converter, to avoid
+pulling that dependency into the storefront for a feature set this simple. Extend its `switch` if
+an editor produces a node type it doesn't handle yet, rather than reaching for the full package.
+
+```tsx
+// Fetching
+const { docs: posts } = await postBrowse({ limit: 24 });
+const post = await postGet("my-post-slug");            // null if not found
+const pages = await legalPageBrowse();                  // only showInFooter: true
+const { docs: reviews } = await reviewsBrowse(productId); // only status: "approved"
+
+// Public writes (Server Actions, e.g. app/contact/action.ts) — no auth required, these are
+// the collections' `create` access rules (see below)
+await contactMessageCreate({ email, subject, message });
+await newsletterSubscribe(email, marketingConsent);      // throws DuplicateSubscriberError on repeat
+await reviewCreate({ productId, authorName, authorEmail, rating, title, content }); // status: "pending"
+```
+
+**Reviews moderation**: `Reviews`' `access.create` is open to everyone (`() => true`) so the
+storefront form can submit without auth, but new reviews default to `status: "pending"` and the
+public `read` access rule filters to `status: "approved"` only. Approve/reject in the Payload
+admin UI (`/admin/collections/reviews`) — there's no in-app moderation queue.
+
+**productId / variantId values are Medusa IDs stored as plain strings** (`Reviews.productId`,
+`Posts.featuredProductId`, `RestockNotifications.variantId`) — Payload has no relational link to
+Medusa's database, so there's no referential integrity between the two; a review can reference a
+product ID that no longer exists in Medusa, and nothing enforces otherwise.
 
 ## Code Examples
 
@@ -188,8 +246,8 @@ There is no GitHub Actions workflow — the husky `pre-commit` hook is the only 
 runs `lint-staged`: Biome over the staged files, then `bun tsc --noEmit` and `bun test` whenever a
 `.ts`/`.tsx` file is staged. `bun run check` runs the same three by hand.
 
-`bun run build` stays out of both, because prerendering reads live data from the local Medusa
-instance — it must be running (`bun run dev:all`) before you build.
+`bun run build` stays out of both, because prerendering reads live data from the local Medusa and
+Payload instances — both must be running (`bun run dev:all`) before you build.
 
 ## Validation Checklist
 
@@ -197,12 +255,13 @@ instance — it must be running (`bun run dev:all`) before you build.
 - [ ] `bun run lint` — no lint errors
 - [ ] `bun run format` — code formatted
 - [ ] `bun test` — tests pass
-- [ ] `bun run build` — build succeeds (Medusa must be running)
+- [ ] `bun run build` — build succeeds (Medusa and Payload must both be running)
 - [ ] `bun run dev:all` — runs without errors, feature works in browser
 - [ ] No console errors, images load, responsive layout
-- [ ] No hardcoded secrets; env vars set (`.env.local`, `medusa/apps/backend/.env`)
+- [ ] No hardcoded secrets; env vars set (`.env.local`, `medusa/apps/backend/.env`, `payload/.env`)
 
-Required env: `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` (see `.env.example`).
+Required env: `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY`, `PAYLOAD_URL` (see
+`.env.example`).
 
 ## Troubleshooting
 
@@ -212,13 +271,17 @@ Required env: `MEDUSA_BACKEND_URL`, `NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` (see `.
 | `Missing env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY` | Env not loaded | Create `.env.local` from `.env.example`, restart dev server |
 | `Method calculatePrices requires currency_code in the pricing context` | A Medusa field expansion (e.g. `*items.variant.calculated_price`) needs pricing context that wasn't supplied | Drop the expansion if the value isn't actually used, or pass `region_id`/currency context |
 | `ECONNREFUSED` on any commerce call | Medusa isn't running / Docker containers are down | `docker compose up -d postgres redis`, then `cd medusa/apps/backend && npm run dev` |
+| `ECONNREFUSED` / `fetch failed` on any blog/legal/review/newsletter/contact call | Payload isn't running | `docker compose up -d postgres`, then `cd payload && npm run dev` |
+| `Payload request failed: 400 ...` on newsletter signup | Duplicate email (unique constraint) | Expected — `lib/payload.ts` turns this into `DuplicateSubscriberError`, handled as a friendly success in `app/newsletter/action.ts`. A raw 400 elsewhere means that handling was bypassed |
+| tsc/lint/test failures inside `medusa/` or `payload/` source files when running the **root** commands | You're running the command from inside `medusa/` or `payload/`, not the repo root — their own configs apply, not the root's exclusions | `cd` back to the repo root before running `bun run check` et al. |
+| `defaultSort` (or similar) "does not exist" TS error in a Payload collection | Config option misplaced — e.g. `defaultSort` belongs at the collection's top level, not nested under `admin` | Check the field against `payload/node_modules/payload/dist/collections/config/types.d.ts` rather than guessing from memory; Payload's config shape changes between versions |
 | `noDefaultExport` | Default export in non-special file | Use named export |
 | `BigInt literal syntax` | Using `0n` with ES2020 | Use `BigInt(0)` |
 
 ## Agent Workflow Notes
 
-- **Explore agent**: Start with `lib/commerce.ts`, `app/layout.tsx`, `app/page.tsx`, `medusa/apps/backend/medusa-config.ts`. Search `"use server"`/`"use cache"` for patterns.
-- **Plan agent**: Check existing code first. Map to: routes (`app/`), API (`lib/commerce.ts`), UI (`components/ui/`), actions (`actions.ts`). Consider caching and server vs client components.
+- **Explore agent**: Start with `lib/commerce.ts`, `lib/payload.ts`, `app/layout.tsx`, `app/page.tsx`, `medusa/apps/backend/medusa-config.ts`, `payload/src/payload.config.ts`. Search `"use server"`/`"use cache"` for patterns.
+- **Plan agent**: Check existing code first. Map to: routes (`app/`), commerce API (`lib/commerce.ts`), content API (`lib/payload.ts`), UI (`components/ui/`), actions (`actions.ts`). Consider caching and server vs client components.
 - **Implementation agent**: Validate with commands above before and after changes. Follow Biome rules, reuse existing UI components.
 - **Frontend design**: Use `frontend-design:frontend-design` skill to achieve a distinctive, production-grade frontend experiences.
 
