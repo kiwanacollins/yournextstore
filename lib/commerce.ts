@@ -1,4 +1,5 @@
 import Medusa from "@medusajs/js-sdk";
+import type { HttpTypes } from "@medusajs/types";
 import { cacheLife } from "next/cache";
 import { invariant } from "@/lib/invariant";
 
@@ -9,7 +10,7 @@ invariant(
 
 // Store API client (publishable key), used for all storefront browsing/cart/order calls.
 // Token storage is "nostore": auth is a per-request bearer token read from our own
-// httpOnly cookie (see lib/auth-cookies.ts) and passed explicitly via headers, since
+// httpOnly cookie (see lib/cookies.ts) and passed explicitly via headers, since
 // Server Components/Actions have no browser storage to persist a token in.
 export const medusa = new Medusa({
 	baseUrl: process.env.MEDUSA_BACKEND_URL ?? "http://localhost:9000",
@@ -162,6 +163,81 @@ export async function orderGet({ id }: { id: string }) {
 		fields: "*items,*items.variant,*shipping_address,*shipping_methods,*payment_collections",
 	});
 	return order;
+}
+
+/** Orders for the signed-in customer, newest first. */
+export async function orderList({ token }: { token: string }) {
+	const { orders, count } = await medusa.store.order.list(
+		{ fields: "*items,*shipping_address", order: "-created_at" },
+		authHeaders(token),
+	);
+	return { data: orders, count };
+}
+
+export async function cartUpdate(
+	cartId: string,
+	body: {
+		email?: string;
+		shipping_address?: HttpTypes.StoreAddAddress;
+		billing_address?: HttpTypes.StoreAddAddress;
+	},
+) {
+	const { cart } = await medusa.store.cart.update(cartId, body);
+	return cart;
+}
+
+export async function shippingOptionsList(cartId: string) {
+	const { shipping_options } = await medusa.store.fulfillment.listCartOptions({ cart_id: cartId });
+	return shipping_options;
+}
+
+export async function cartAddShippingMethod(cartId: string, optionId: string) {
+	const { cart } = await medusa.store.cart.addShippingMethod(cartId, { option_id: optionId });
+	return cart;
+}
+
+export async function paymentSessionInitiate(cart: HttpTypes.StoreCart, providerId: string) {
+	const { payment_collection } = await medusa.store.payment.initiatePaymentSession(cart, {
+		provider_id: providerId,
+	});
+	return payment_collection;
+}
+
+/** Completes the cart. Returns either the created order or the cart with the completion error. */
+export async function cartComplete(cartId: string) {
+	return medusa.store.cart.complete(cartId);
+}
+
+/** Step 1 of sign-up: registers the auth identity and returns a short-lived registration token. */
+export async function customerRegisterAuth(email: string, password: string) {
+	const result = await medusa.auth.register("customer", "emailpass", { email, password });
+	if (typeof result !== "string") {
+		throw new Error("Registration requires additional steps that aren't supported here.");
+	}
+	return result;
+}
+
+/** Step 2 of sign-up: creates the customer record using the registration token from step 1. */
+export async function customerCreate(
+	registrationToken: string,
+	body: { email: string; first_name?: string; last_name?: string },
+) {
+	const { customer } = await medusa.store.customer.create(body, {}, authHeaders(registrationToken));
+	return customer;
+}
+
+/** Signs in an existing customer, returning the session token to store in the auth cookie. */
+export async function customerLogin(email: string, password: string) {
+	const result = await medusa.auth.login("customer", "emailpass", { email, password });
+	if (typeof result !== "string") {
+		throw new Error("Sign-in requires additional steps that aren't supported here.");
+	}
+	return result;
+}
+
+export async function customerGet(token: string) {
+	const { customer } = await medusa.store.customer.retrieve({}, authHeaders(token));
+	return customer;
 }
 
 export function getCanonicalUrl(): string {

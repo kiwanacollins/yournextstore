@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2, ShoppingBag } from "lucide-react";
+import Link from "next/link";
 import { useCart } from "@/app/cart/cart-context";
 import { CartItem } from "@/app/cart/cart-item";
 import { useStoreConfig } from "@/components/store-config-provider";
@@ -68,12 +69,10 @@ export function CartSidebar() {
 									<span className="font-semibold">{formatMoney({ amount: subtotal, currency, locale })}</span>
 								</div>
 								<p className="text-xs text-muted-foreground">Shipping and taxes calculated at checkout</p>
-								{/* Keep this a plain <a>, never <Link>/router.push: /checkout is proxied to a
-								    different Next.js zone (yns.store). A soft RSC nav 500s the cross-zone request.
-								    While a cart write is in flight, block the link: a full navigation now would
-								    load /checkout before the item is committed server-side and show an empty cart. */}
+								{/* While a cart write is in flight, block the link: navigating now could
+								    land on /checkout before the item is committed server-side. */}
 								<Button asChild className="w-full h-12 text-base font-medium">
-									<a
+									<Link
 										href={checkoutUrl}
 										aria-disabled={isMutating}
 										tabIndex={isMutating ? -1 : undefined}
@@ -92,7 +91,7 @@ export function CartSidebar() {
 										) : (
 											"Checkout"
 										)}
-									</a>
+									</Link>
 								</Button>
 								<button
 									type="button"

@@ -157,16 +157,15 @@ async function CartProviderWrapper({ children }: { children: React.ReactNode }) 
 										<SearchInput />
 									</Suspense>
 									<ThemeToggle />
-									{/* Plain <a>: /account is a proxied zone — soft navigation 500s (see AGENTS.md).
-									    Static on purpose: reading the session here would pull the header out of the
-									    prerendered shell. Guests get the sign-in flow, shoppers land on the dashboard. */}
-									<a
+									{/* Static on purpose: reading the session here would pull the header out of
+									    the prerendered shell. /account itself redirects guests to sign-in. */}
+									<Link
 										href="/account"
 										className="p-2 hover:bg-secondary transition-colors"
 										aria-label="Account"
 									>
 										<UserRound className="w-5 h-5" />
-									</a>
+									</Link>
 									<CartButton />
 								</div>
 							</div>

@@ -37,6 +37,8 @@ type CartContextValue = {
 	dispatch: (action: CartAction) => void;
 	/** Replace local state with the server's authoritative cart (no-op on null). */
 	syncCart: (next: Cart | null) => void;
+	/** Empty the cart locally — call after an order is placed, which consumes the cart server-side. */
+	clearCart: () => void;
 	/** Refetch the authoritative cart from the server — call only when a write FAILED. */
 	reconcile: () => Promise<void>;
 	/** Seed the cart read from the customer's cookie once it streams in. See CartBootstrap. */
@@ -76,6 +78,11 @@ export function CartProvider({ children }: CartProviderProps) {
 			written.current = true;
 			setCart(next);
 		}
+	}, []);
+	const clearCart = useCallback(() => {
+		written.current = true;
+		setCart(null);
+		setServerCartId(null);
 	}, []);
 	const reconcile = useCallback(async () => {
 		written.current = true;
@@ -132,6 +139,7 @@ export function CartProvider({ children }: CartProviderProps) {
 			closeCart,
 			dispatch,
 			syncCart,
+			clearCart,
 			reconcile,
 			bootstrap,
 			startMutation,
@@ -148,6 +156,7 @@ export function CartProvider({ children }: CartProviderProps) {
 			closeCart,
 			dispatch,
 			syncCart,
+			clearCart,
 			reconcile,
 			bootstrap,
 		],
