@@ -1,8 +1,37 @@
 import { cacheLife } from "next/cache";
 import Link from "next/link";
+import { NewsletterForm } from "@/components/newsletter-form";
 import { collectionBrowse } from "@/lib/commerce";
+import { getSiteSettings, legalPageBrowse } from "@/lib/payload";
 
-// Blog, contact form, and legal pages are Phase 2 (Payload CMS) — links dropped for now.
+async function FooterLegalLinks() {
+	"use cache";
+	cacheLife("hours");
+
+	const pages = await legalPageBrowse();
+
+	if (pages.length === 0) {
+		return null;
+	}
+
+	return (
+		<div>
+			<h3 className="text-sm font-semibold text-foreground">Legal</h3>
+			<ul className="mt-4 space-y-3">
+				{pages.map((page) => (
+					<li key={page.id}>
+						<Link
+							href={`/legal/${page.slug}`}
+							className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+						>
+							{page.title}
+						</Link>
+					</li>
+				))}
+			</ul>
+		</div>
+	);
+}
 
 async function FooterCollections() {
 	"use cache";
@@ -43,7 +72,7 @@ async function getCopyrightYear() {
 }
 
 export async function Footer() {
-	const year = await getCopyrightYear();
+	const [year, siteSettings] = await Promise.all([getCopyrightYear(), getSiteSettings()]);
 
 	return (
 		<footer className="border-t border-border bg-background">
@@ -57,6 +86,10 @@ export async function Footer() {
 						<p className="mt-4 text-sm text-muted-foreground leading-relaxed">
 							Curated essentials for modern living. Quality products, thoughtfully designed.
 						</p>
+						<div className="mt-6">
+							<h3 className="text-sm font-semibold text-foreground mb-3">Newsletter</h3>
+							<NewsletterForm />
+						</div>
 					</div>
 
 					{/* Collections */}
@@ -82,8 +115,31 @@ export async function Footer() {
 									FAQ
 								</Link>
 							</li>
+							{siteSettings.showBlogLink && (
+								<li>
+									<Link
+										href="/blog"
+										className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+									>
+										Blog
+									</Link>
+								</li>
+							)}
+							{siteSettings.showContactLink && (
+								<li>
+									<Link
+										href="/contact"
+										className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+									>
+										Contact
+									</Link>
+								</li>
+							)}
 						</ul>
 					</div>
+
+					{/* Legal */}
+					<FooterLegalLinks />
 				</div>
 
 				{/* Bottom bar */}

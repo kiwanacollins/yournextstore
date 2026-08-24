@@ -6,6 +6,7 @@ import { Suspense } from "react";
 import { AddToCartButton } from "@/app/product/[slug]/add-to-cart-button";
 import { MediaGallery } from "@/app/product/[slug]/media-gallery";
 import { ProductFeatures } from "@/app/product/[slug]/product-features";
+import { ProductReviews } from "@/app/product/[slug]/product-reviews";
 import { RelatedProducts } from "@/app/product/[slug]/related-products";
 import {
 	Breadcrumb,
@@ -229,6 +230,11 @@ const ProductDetails = async ({ params }: { params: Promise<{ slug: string }> })
 
 			{/* Features Section (full width below) */}
 			<ProductFeatures />
+
+			{/* Reviews */}
+			<Suspense fallback={null}>
+				<ProductReviews productId={product.id} />
+			</Suspense>
 
 			{/* Related Products */}
 			<RelatedProducts productId={product.id} categoryId={category?.id} />
