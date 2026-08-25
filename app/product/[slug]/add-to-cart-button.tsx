@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { addToCart } from "@/app/cart/actions";
 import { useCart } from "@/app/cart/cart-context";
 import { QuantitySelector } from "@/app/product/[slug]/quantity-selector";
+import { RestockNotifyForm } from "@/app/product/[slug]/restock-notify-form";
 import { TrustBadges } from "@/app/product/[slug]/trust-badges";
 import { useSelectedVariant } from "@/app/product/[slug]/use-selected-variant";
 import { VariantSelector } from "@/app/product/[slug]/variant-selector";
@@ -54,9 +55,10 @@ export function AddToCartButton({ variants, product, summary }: AddToCartButtonP
 
 	const selectedVariant = useSelectedVariant(variants);
 
-	// stock === null means stock isn't tracked for this variant (unlimited)
-	const isOutOfStock = selectedVariant?.stock === 0;
-	const maxQuantity = selectedVariant?.stock ?? 99;
+	// stock === null means stock isn't tracked for this variant (unlimited). <= 0 (not just
+	// === 0) because Medusa's available_quantity can go negative under over-reservation.
+	const isOutOfStock = selectedVariant?.stock !== null && (selectedVariant?.stock ?? 0) <= 0;
+	const maxQuantity = Math.max(0, selectedVariant?.stock ?? 99);
 	const effectiveQuantity = isOutOfStock ? 1 : Math.min(quantity, maxQuantity);
 
 	const unitPrice = selectedVariant?.price;
@@ -109,7 +111,7 @@ export function AddToCartButton({ variants, product, summary }: AddToCartButtonP
 	const stockStatus = useMemo(() => {
 		if (!selectedVariant) return null;
 		const { stock } = selectedVariant;
-		if (stock === 0) return { label: "Out of stock", tone: "out" as const };
+		if (stock !== null && stock <= 0) return { label: "Out of stock", tone: "out" as const };
 		if (stock !== null && stock <= LOW_STOCK_THRESHOLD) {
 			return { label: `Only ${stock} left in stock`, tone: "low" as const };
 		}
@@ -228,6 +230,8 @@ export function AddToCartButton({ variants, product, summary }: AddToCartButtonP
 					{buttonText}
 				</button>
 			</form>
+
+			{isOutOfStock && selectedVariant && <RestockNotifyForm variantId={selectedVariant.id} />}
 
 			<TrustBadges />
 		</div>
