@@ -32,8 +32,13 @@ export async function ProductGrid({
 		<section id="products" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-24">
 			<div className="flex items-end justify-between mb-12">
 				<div>
-					<h2 className="text-2xl sm:text-3xl font-medium text-foreground">{title}</h2>
-					<p className="mt-2 text-muted-foreground">{description}</p>
+					<p className="inline-flex items-center gap-2 rounded-full border border-border bg-secondary/50 px-3 py-1 text-xs font-medium tracking-wide uppercase text-accent-foreground">
+						The collection
+					</p>
+					<h2 className="mt-4 font-display text-3xl sm:text-4xl font-medium tracking-tight text-foreground">
+						{title}
+					</h2>
+					<p className="mt-3 text-muted-foreground max-w-xl">{description}</p>
 				</div>
 				{showViewAll && (
 					<Link

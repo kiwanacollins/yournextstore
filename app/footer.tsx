@@ -80,7 +80,7 @@ export async function Footer() {
 				<div className="py-12 sm:py-16 flex flex-col sm:flex-row gap-8 sm:gap-16">
 					{/* Brand */}
 					<div className="sm:max-w-xs">
-						<Link href="/" className="text-xl font-bold text-foreground">
+						<Link href="/" className="font-display text-xl font-medium tracking-tight text-foreground">
 							Mutindo Express Cakes
 						</Link>
 						<p className="mt-4 text-sm text-muted-foreground leading-relaxed">

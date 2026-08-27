@@ -3,7 +3,7 @@ import "@/app/globals.css";
 import { UserRound } from "lucide-react";
 import type { Metadata } from "next";
 import { cacheLife } from "next/cache";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Fraunces, Instrument_Sans } from "next/font/google";
 import Link from "next/link";
 import { ThemeProvider } from "next-themes";
 import { Suspense } from "react";
@@ -26,13 +26,14 @@ import { getStoreConfig } from "@/lib/store-config";
 
 const DEFAULT_FAVICON = "/logo.svg";
 
-const geistSans = Geist({
-	variable: "--font-geist-sans",
+const fraunces = Fraunces({
+	variable: "--font-fraunces",
 	subsets: ["latin"],
+	axes: ["SOFT", "WONK", "opsz"],
 });
 
-const geistMono = Geist_Mono({
-	variable: "--font-geist-mono",
+const instrumentSans = Instrument_Sans({
+	variable: "--font-instrument-sans",
 	subsets: ["latin"],
 });
 
@@ -147,7 +148,7 @@ async function CartProviderWrapper({ children }: { children: React.ReactNode }) 
 						<div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
 							<div className="relative flex items-center justify-between h-16">
 								<div className="flex items-center gap-2">
-									<Link href="/" className="text-xl font-bold">
+									<Link href="/" className="font-display text-xl font-medium tracking-tight">
 										Mutindo Express Cakes
 									</Link>
 									<Navbar links={links} />
@@ -193,7 +194,7 @@ export default async function RootLayout({
 	return (
 		// suppressHydrationWarning: next-themes sets the theme class on <html> before hydration.
 		<html lang="en" suppressHydrationWarning>
-			<body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+			<body className={`${fraunces.variable} ${instrumentSans.variable} antialiased`}>
 				{/* DO NOT REMOVE / REORDER: required for GDPR + GTM Consent Mode v2. Must stay at top of <body>. */}
 				<Suspense>
 					<CookieConsent />

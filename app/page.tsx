@@ -23,7 +23,11 @@ export default function Home() {
 		<>
 			<Hero />
 			<Suspense fallback={<FeaturedProductsSkeleton />}>
-				<ProductGrid title="Featured Products" limit={6} />
+				<ProductGrid
+					title="Our custom cakes"
+					description="Freshly baked favorites, ready to be customised for your celebration."
+					limit={6}
+				/>
 			</Suspense>
 			<About />
 		</>
