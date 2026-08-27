@@ -148,7 +148,7 @@ async function CartProviderWrapper({ children }: { children: React.ReactNode }) 
 							<div className="relative flex items-center justify-between h-16">
 								<div className="flex items-center gap-2">
 									<Link href="/" className="text-xl font-bold">
-										Your Next Store
+										Mutindo Express Cakes
 									</Link>
 									<Navbar links={links} />
 								</div>

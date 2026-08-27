@@ -10,7 +10,7 @@ export const SiteSettings: GlobalConfig = {
       name: 'storeName',
       type: 'text',
       required: true,
-      defaultValue: 'Your Next Store',
+      defaultValue: 'Mutindo Express Cakes Kampala',
     },
     {
       name: 'storeDescription',

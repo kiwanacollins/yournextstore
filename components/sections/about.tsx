@@ -5,12 +5,13 @@ export function About() {
 				<div className="max-w-2xl mx-auto text-center">
 					<h2 className="text-3xl sm:text-4xl font-medium tracking-tight text-foreground">Our Story</h2>
 					<p className="mt-6 text-lg text-muted-foreground leading-relaxed">
-						We believe in the power of thoughtful design. Every product in our collection is carefully
-						selected to bring quality, beauty, and functionality into your everyday life.
+						Mutindo Express Cakes Kampala is a professional custom bakery in Kampala, Uganda, passionate about
+						fresh, made-to-order cakes. From birthdays and weddings to introductions, graduations, baby
+						showers, and corporate events, every cake is baked to order and customised to your vision.
 					</p>
 					<p className="mt-4 text-lg text-muted-foreground leading-relaxed">
-						Our commitment to craftsmanship means we partner with makers who share our values — those who
-						prioritize sustainable materials, ethical production, and timeless design over fleeting trends.
+						We're known for our beautiful custom designs, delicious flavors, and dependable delivery across
+						Kampala and the surrounding areas — so your celebration is as memorable as your cake.
 					</p>
 				</div>
 			</div>

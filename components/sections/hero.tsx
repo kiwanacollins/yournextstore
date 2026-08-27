@@ -8,18 +8,18 @@ export function Hero() {
 				<div className="py-16 sm:py-20 lg:py-28">
 					<div className="max-w-2xl">
 						<h1 className="text-4xl sm:text-5xl lg:text-6xl font-medium tracking-tight text-foreground">
-							Curated essentials for modern living
+							Custom cakes, crafted for your special moments
 						</h1>
 						<p className="mt-6 text-lg sm:text-xl text-muted-foreground leading-relaxed">
-							Discover our thoughtfully designed collection of premium products, crafted with care and built
-							to last.
+							Freshly baked, beautifully customised cakes for birthdays, weddings, graduations, baby showers,
+							and corporate events — delivered across Kampala and beyond.
 						</p>
 						<div className="mt-10 flex flex-col sm:flex-row gap-4">
 							<Link
 								href="#products"
 								className="inline-flex items-center justify-center gap-2 h-12 px-8 bg-foreground text-background rounded-full text-base font-medium hover:bg-foreground/90 transition-colors"
 							>
-								Shop Collection
+								Order a Cake
 								<ArrowRightIcon className="h-4 w-4" />
 							</Link>
 							<Link

@@ -81,10 +81,11 @@ export async function Footer() {
 					{/* Brand */}
 					<div className="sm:max-w-xs">
 						<Link href="/" className="text-xl font-bold text-foreground">
-							Your Next Store
+							Mutindo Express Cakes
 						</Link>
 						<p className="mt-4 text-sm text-muted-foreground leading-relaxed">
-							Curated essentials for modern living. Quality products, thoughtfully designed.
+							Fresh, custom-made cakes for every occasion. Beautiful designs, delicious flavors, and reliable
+							delivery across Kampala and surrounding areas.
 						</p>
 						<div className="mt-6">
 							<h3 className="text-sm font-semibold text-foreground mb-3">Newsletter</h3>
@@ -144,7 +145,9 @@ export async function Footer() {
 
 				{/* Bottom bar */}
 				<div className="py-6 border-t border-border">
-					<p className="text-sm text-muted-foreground">&copy; {year} Your Next Store. All rights reserved.</p>
+					<p className="text-sm text-muted-foreground">
+						&copy; {year} Mutindo Express Cakes Kampala. All rights reserved.
+					</p>
 				</div>
 			</div>
 		</footer>

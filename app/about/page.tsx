@@ -63,35 +63,37 @@ export default async function AboutPage() {
 					<h2 className="text-2xl font-medium tracking-tight mb-4">Our Story</h2>
 					<div className="space-y-4 text-muted-foreground leading-relaxed">
 						<p>
-							We believe in the power of thoughtful design. Every product in our collection is carefully
-							selected to bring quality, beauty, and functionality into your everyday life.
+							Mutindo Express Cakes Kampala is a professional custom bakery in Kampala, Uganda, passionate
+							about fresh, made-to-order cakes. Whether it's a birthday, wedding, introduction, graduation,
+							baby shower, or corporate event, we bake every cake to order and customise it to your vision.
 						</p>
 						<p>
-							Our commitment to craftsmanship means we partner with makers who share our values — those who
-							prioritize sustainable materials, ethical production, and timeless design over fleeting trends.
+							Our cakes are known for their beautiful custom designs and delicious flavors, paired with a
+							reliable delivery service that reaches across Kampala and the surrounding areas — so your
+							celebration is as memorable as your cake.
 						</p>
 					</div>
 				</section>
 
 				<section>
-					<h2 className="text-2xl font-medium tracking-tight mb-4">What We Stand For</h2>
+					<h2 className="text-2xl font-medium tracking-tight mb-4">Why Choose Us</h2>
 					<div className="grid gap-6 sm:grid-cols-3">
 						<div>
-							<h3 className="text-base font-medium text-foreground">Quality first</h3>
+							<h3 className="text-base font-medium text-foreground">Custom designs</h3>
 							<p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-								Durable, well-made products we are proud to stand behind.
+								Cakes tailored to your theme, colors, and occasion — beautifully finished.
 							</p>
 						</div>
 						<div>
-							<h3 className="text-base font-medium text-foreground">Thoughtful design</h3>
+							<h3 className="text-base font-medium text-foreground">Fresh &amp; delicious</h3>
 							<p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-								Considered details that make everyday moments better.
+								Baked to order with high-quality ingredients and flavors everyone loves.
 							</p>
 						</div>
 						<div>
-							<h3 className="text-base font-medium text-foreground">Honest service</h3>
+							<h3 className="text-base font-medium text-foreground">Reliable delivery</h3>
 							<p className="mt-2 text-sm text-muted-foreground leading-relaxed">
-								Real people, ready to help before and after your order.
+								Dependable delivery across Kampala and surrounding areas, right on time.
 							</p>
 						</div>
 					</div>
@@ -100,16 +102,16 @@ export default async function AboutPage() {
 
 			{/* CTA */}
 			<div className="mt-16 rounded-lg border border-border bg-secondary/30 p-8 text-center">
-				<h2 className="text-2xl font-medium tracking-tight">Want to learn more?</h2>
+				<h2 className="text-2xl font-medium tracking-tight">Ready to order a cake?</h2>
 				<p className="mt-2 text-muted-foreground">
-					Explore our products or get in touch — we would love to hear from you.
+					Browse our cakes or get in touch — we would love to help plan your celebration.
 				</p>
 				<div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
 					<Link
 						href="/products"
 						className="inline-flex h-11 items-center justify-center rounded-full bg-foreground px-8 font-medium text-background transition-all hover:bg-foreground/90"
 					>
-						Shop products
+						Browse cakes
 					</Link>
 				</div>
 			</div>
