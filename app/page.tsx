@@ -1,7 +1,9 @@
 import { Suspense } from "react";
 import { ProductGridSkeleton } from "@/components/product-grid-skeleton";
 import { About } from "@/components/sections/about";
+import { CustomOrders } from "@/components/sections/custom-orders";
 import { Hero } from "@/components/sections/hero";
+import { Occasions } from "@/components/sections/occasions";
 import { ProductGrid } from "@/components/sections/product-grid";
 
 function FeaturedProductsSkeleton() {
@@ -22,6 +24,7 @@ export default function Home() {
 	return (
 		<>
 			<Hero />
+			<Occasions />
 			<Suspense fallback={<FeaturedProductsSkeleton />}>
 				<ProductGrid
 					title="Our custom cakes"
@@ -29,6 +32,7 @@ export default function Home() {
 					limit={6}
 				/>
 			</Suspense>
+			<CustomOrders />
 			<About />
 		</>
 	);
